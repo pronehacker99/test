@@ -1,33 +1,40 @@
---// Grow a Garden - Carrot Gift Script
---// Made for executors (Synapse, Fluxus, etc.)
+--// Grow a Garden - Carrot Gift Script (Fixed for your game)
+--// Change this to the actual carrot Tool_# once you find it
+local carrotToolId = "Tool_4"
 
--- SETTINGS
-local carrotToolId = "Tool_4" -- Change this to the actual carrot Tool_# after testing
+-- Safe parent for GUI (bypasses CoreGui restrictions in some executors)
+local function getSafeParent()
+    local success, ui = pcall(gethui)
+    if success and ui then
+        return ui
+    else
+        return game:GetService("CoreGui")
+    end
+end
 
--- SERVICES
+-- Services
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
--- REMOTES
-local FavoriteToolRemote = ReplicatedStorage:WaitForChild("FavoriteToolRemote_upvr")
-local SendGiftRemote = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("Gift"):WaitForChild("SendGiftTo")
-
--- LOCAL PLAYER
 local lp = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
 
--- FUNCTION: Teleport to target
+-- Remotes (exact from your file)
+local FavoriteToolRemote = RS:WaitForChild("ReplicatedStorage_upvr"):WaitForChild("FavoriteToolRemote_upvr")
+local SendGiftRemote = RS:WaitForChild("ReplicatedStorage_upvr")
+    :WaitForChild("GameEvents"):WaitForChild("Gift"):WaitForChild("SendGiftTo")
+
+-- Teleport to target player
 local function teleportToPlayer(targetPlayer)
     if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
         lp.Character:PivotTo(targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3))
     end
 end
 
--- FUNCTION: Equip carrot
+-- Equip carrot
 local function equipCarrot()
     FavoriteToolRemote:InvokeServer(carrotToolId)
 end
 
--- FUNCTION: Send carrot as gift
+-- Send carrot gift
 local function sendCarrot(targetPlayer)
     SendGiftRemote:FireServer({
         Target = targetPlayer,
@@ -35,7 +42,7 @@ local function sendCarrot(targetPlayer)
     })
 end
 
--- FUNCTION: Main process
+-- Main function
 local function giftCarrotTo(targetPlayer)
     teleportToPlayer(targetPlayer)
     task.wait(0.5)
@@ -44,12 +51,12 @@ local function giftCarrotTo(targetPlayer)
     sendCarrot(targetPlayer)
 end
 
--- SIMPLE GUI
+-- Simple player selector GUI
 local ScreenGui = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
 local PlayerList = Instance.new("ScrollingFrame")
 
-ScreenGui.Parent = game.CoreGui
+ScreenGui.Parent = getSafeParent()
 
 Frame.Size = UDim2.new(0, 200, 0, 300)
 Frame.Position = UDim2.new(0.5, -100, 0.5, -150)
