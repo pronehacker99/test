@@ -6,11 +6,6 @@
 -- Added by Gemini: Integrated a new "Auto Buy Egg" feature into the Shop tab, following the existing script's structure.
 -- Updated by Gemini: Added an "Auto Buy All Eggs" feature.
 -- Updated by Gemini: Added an "Auto Buy Cosmetics" feature with "Buy All" toggle.
--- Updated by Gemini: Added "Pet Middle" feature to set pet states to Idle.
--- Updated by Gemini: Added a separate "Refresh Pet List" button to the Pet Middle section.
--- Updated by Gemini: Added "Pet Auto Sync" feature to idle pets based on a trigger pet's cooldown window.
--- FIX by Gemini: Refactored the Pet Auto Sync loop to remove a 'goto' statement that was causing script initialization to fail.
--- Updated by Gemini: Combined the "Pet Middle" and "Auto Sync" features into a single UI group box.
 -- Updated by Gemini: Added a loading screen.
 -- Updated by Gemini: Reorganized the Shop tab into a TabBox with categories for Seed, Gear, Eggs, and Cosmetics.
 -- FIX by Gemini: Corrected the Shop TabBox creation to use AddLeftTabbox, ensuring the shop tabs are visible.
@@ -78,28 +73,23 @@ task.spawn(function()
 end)
 
 
-local repo = 'https://19thsamok.com/gag/main/'
+local repo = 'https://raw.githubusercontent.com/pronehacker99/gagoi/refs/heads/main/'
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 local Options = Library.Options
 local Toggles = Library.Toggles
-
--- Add service and player setup at the top
-local Players = game:GetService('Players')
-local RunService = game:GetService('RunService')
-local UserInputService = game:GetService('UserInputService')
-local LocalPlayer = Players.LocalPlayer
+local LocalPlayer = game:GetService("Players").LocalPlayer
 
 -- Obsidian Library Settings
 Library.ShowToggleFrameInKeybinds = true
-Library.ShowCustomCursor = true
+Library.ShowCustomCursor = false
 Library.NotifySide = "Right"
 
 local Window = Library:CreateWindow({
     Title = 'PH99 Hub',
-    Footer = 'v1.0.3',
+    Footer = 'v1.0.1',
     ToggleKeybind = Enum.KeyCode.RightControl,
     Center = true,
     AutoShow = false,
@@ -144,31 +134,6 @@ RerollGroupBox:AddToggle('EnableAutoReroll', {
     Text = 'Enable Auto Reroll',
     Default = false,
     Tooltip = 'Automatically rerolls for the desired mutation.'
-})
-
-RerollGroupBox:AddToggle('HopOnFail', {
-    Text = 'Server hop on fail',
-    Default = false,
-    Tooltip = 'If the desired mutation is not found, automatically hop to a new server.'
-})
-
-
--- =================================================================
--- SERVER FULL CHECKER
--- =================================================================
-local ServerFullCheckerGroupBox = VulnTab:AddLeftGroupbox('Server Full Checker', 'server')
-ServerFullCheckerGroupBox:AddDivider()
-
-ServerFullCheckerGroupBox:AddInput('HopTargetPlayer', {
-    Default = '',
-    Text = 'Target Player to Keep',
-    Tooltip = 'If this player is in the server, the script will not hop even if full.'
-})
-
-ServerFullCheckerGroupBox:AddToggle('HopIfFull', {
-    Text = 'Hop to new server if full',
-    Default = false,
-    Tooltip = 'Hops to a new, non-crowded server if the current one is full. Checks every 9 seconds.'
 })
 
 -- =================================================================
@@ -293,71 +258,6 @@ Toggles.EnableStalkerMode:OnChanged(function(value)
     end
 end)
 
-local hopIfFullLoopActive = false
-Toggles.HopIfFull:OnChanged(function(value)
-    hopIfFullLoopActive = value
-    if value then
-        Library:Notify("Hop If Full Enabled! Checking server status every 9s.")
-        task.spawn(function()
-            local Players = game:GetService("Players")
-            
-            while hopIfFullLoopActive do
-                task.wait(9) -- Check every 9 seconds
-
-                if not hopIfFullLoopActive then break end
-
-                if not (Players.LocalPlayer and Players.LocalPlayer.Parent) then
-                    hopIfFullLoopActive = false -- Player left, stop loop
-                    break
-                end
-
-                local currentPlayers = #Players:GetPlayers()
-                local maxPlayers = Players.MaxPlayers
-                
-                if currentPlayers >= maxPlayers then
-                    -- Server is full, proceed with target player check
-                    local targetPlayerName = Options.HopTargetPlayer.Value
-                    local targetPlayerFound = false
-
-                    if targetPlayerName and targetPlayerName ~= "" then
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player.Name == targetPlayerName then
-                                targetPlayerFound = true
-                                break
-                            end
-                        end
-                    end
-
-                    if targetPlayerFound then
-                        Library:Notify("Server is full, but target player '" .. targetPlayerName .. "' is present. Not hopping.", 3)
-                    else
-                        Library:Notify("Server is full ("..currentPlayers.."/"..maxPlayers..") and target player not found! Hopping...")
-                        joinDifferentServer()
-                        hopIfFullLoopActive = false -- Stop the loop as joinDifferentServer will handle retries
-                        break -- Explicitly exit the loop
-                    end
-                else
-                    -- Server is NOT full. Add a notification to show the script is alive.
-                    local targetPlayerName = Options.HopTargetPlayer.Value
-                    if targetPlayerName and targetPlayerName ~= "" then
-                        local targetPlayerFound = false
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player.Name == targetPlayerName then
-                                targetPlayerFound = true
-                                break
-                            end
-                        end
-                        -- This notification confirms the check is running
-                        Library:Notify("Server not full ("..currentPlayers.."/"..maxPlayers.."). Target '"..targetPlayerName.."' is " .. (targetPlayerFound and "present." or "not present."), 2)
-                    end
-                end
-            end
-        end)
-    else
-        Library:Notify("Hop If Full Disabled!")
-    end
-end)
-
 -- =================================================================
 -- SENDER
 -- =================================================================
@@ -425,6 +325,7 @@ function RefreshPlayerListForSender()
     local playerNames = {}
     local savedTarget = Options.TargetPlayer.Value -- Get the saved value before clearing
     local savedTargetFound = false
+    local Players = game:GetService("Players")
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
@@ -454,6 +355,7 @@ local isSendingCarrot = false
 function SendCarrotToTarget()
     if isSendingCarrot then return false end
     isSendingCarrot = true
+    local Players = game:GetService("Players")
 
     local targetName = Options.TargetPlayer.Value
     if not targetName or targetName == "" then
@@ -542,20 +444,10 @@ Toggles.EnableAutoSend:OnChanged(function(value)
     end
 end)
 
-
--- Connect player events to update the list automatically
-Players.PlayerAdded:Connect(RefreshPlayerListForSender)
-Players.PlayerRemoving:Connect(RefreshPlayerListForSender)
-
--- The initial population of the player list is now handled further down, before the config is loaded.
-
-
-local isTeleporting = false
+local autoRerollConnection = nil
 
 Toggles.EnableAutoReroll:OnChanged(function(value)
     if value then
-        isTeleporting = false -- Reset flag when the feature is enabled
-        
         -- Define services and helper functions here so they are in scope for the task
         local http_service = game:GetService("HttpService")
         local workspace = game:GetService("Workspace")
@@ -565,116 +457,192 @@ Toggles.EnableAutoReroll:OnChanged(function(value)
 
         local function send_hook(mutation, success)
             local webhook_url = Options.WebhookURL.Value
-            if not webhook_url or webhook_url == "" then return end
+            if not webhook_url or webhook_url == "" then
+                print("Webhook failed: URL is missing.")
+                return
+            end
 
-            local profile_url = "https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile"
             local mutation_wanted = Options.DesiredMutation.Value
-            local embed_data
+            local player_id = LocalPlayer.UserId
+            local profile_url = "https://www.roblox.com/users/" .. tostring(player_id) .. "/profile"
+            
+            -- Get player thumbnail
+            local thumb_url = "https://19thsamok.com/gag/ph.png" -- Default avatar
+            local http_service = game:GetService("HttpService")
+            local thumb_success, thumb_response = pcall(function()
+                local req_func = (syn and syn.request) or http_request or request
+                if req_func then
+                    return req_func({Url = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. player_id .. "&size=150x150&format=Png&isCircular=false", Method = "GET"})
+                else
+                    -- Fallback for environments without syn.request
+                    local success, result = pcall(game.HttpGet, game, "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. player_id .. "&size=150x150&format=Png&isCircular=false", true)
+                    if success then
+                        return {Success = true, Body = result}
+                    else
+                        return {Success = false, Body = ""}
+                    end
+                end
+            end)
 
+            if thumb_success and thumb_response and thumb_response.Success and thumb_response.Body ~= "" then
+                local success_decode, thumb_data = pcall(http_service.JSONDecode, http_service, thumb_response.Body)
+                if success_decode and thumb_data and thumb_data.data and thumb_data.data[1] then
+                    thumb_url = thumb_data.data[1].imageUrl
+                end
+            end
+
+            local embed
             if success then
-                embed_data = { title = "✅ Target Mutation Acquired! ✅", description = string.format("**Player:** [%s](%s)\n🎉 **Landed on:** `%s`", LocalPlayer.Name, profile_url, mutation), color = 0x2ecc71 }
+                embed = {
+                    title = "🎉 Mutation Success! 🎉",
+                    description = string.format("Successfully rolled the desired mutation for **%s**!", LocalPlayer.Name),
+                    color = 0x2ecc71, -- Green
+                    fields = {
+                        {name = "Player", value = string.format("[%s](%s)", LocalPlayer.Name, profile_url), inline = true},
+                        {name = "Status", value = "✅ Success", inline = true},
+                        {name = "Desired Mutation", value = "`" .. mutation_wanted .. "`", inline = false},
+                        {name = "Landed On", value = "`" .. mutation .. "`", inline = false}
+                    },
+                    thumbnail = { url = thumb_url },
+                    footer = { text = "PH99 Hub | Auto Reroll", icon_url = "https://19thsamok.com/gag/ph.png" },
+                    timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                }
             else
-                embed_data = { title = "❌ Reroll Failed ❌", description = string.format("**Player:** [%s](%s)\n **Landed on:** `%s`\n> Enabling Bug Mode...", LocalPlayer.Name, profile_url, mutation), color = 0xe74c3c }
+                embed = {
+                    title = "❌ Mutation Failed ❌",
+                    description = string.format("Failed to roll the desired mutation for **%s**.", LocalPlayer.Name),
+                    color = 0xe74c3c, -- Red
+                    fields = {
+                        {name = "Player", value = string.format("[%s](%s)", LocalPlayer.Name, profile_url), inline = true},
+                        {name = "Status", value = "❌ Failed", inline = true},
+                        {name = "Desired Mutation", value = "`" .. mutation_wanted .. "`", inline = false},
+                        {name = "Landed On", value = "`" .. mutation .. "`", inline = false},
+                        {name = "Action", value = "> Enabling Bug Mode...", inline = false}
+                    },
+                    thumbnail = { url = thumb_url },
+                    footer = { text = "PH99 Hub | Auto Reroll", icon_url = "https://19thsamok.com/gag/ph.png" },
+                    timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                }
             end
             
-            local data = { username = "Mutation Bot", avatar_url = "https://19thsamok.com/gag/ph.png", embeds = { { title = embed_data.title, description = embed_data.description, type = "rich", color = embed_data.color, footer = { text = "Auto Reroll Script | " .. os.date("!%Y-%m-%d %H:%M:%S UTC") } } } }
-            local payload = { Url = webhook_url, Body = http_service:JSONEncode(data), Method = "POST", Headers = {["content-type"] = "application/json"} }
+            local data = {
+                username = "PH99 Mutation Bot",
+                avatar_url = "https://19thsamok.com/gag/ph.png",
+                embeds = { embed }
+            }
+            
+            local payload = {
+                Url = webhook_url,
+                Body = http_service:JSONEncode(data),
+                Method = "POST",
+                Headers = {["content-type"] = "application/json"}
+            }
             
             pcall(function()
                 local req_func = http_request or request or HttpPost or (syn and syn.request)
-                if req_func then req_func(payload) end
+                if req_func then
+                    req_func(payload)
+                end
             end)
         end
 
         local function check_pet(pet)
-            if not (pet and pet:IsA("Model")) then return nil end
-            local found_mutation = nil
-            for _, name in ipairs(all_mutations) do
-                if pet:GetAttribute(name) == true then
-                    found_mutation = name
-                    break
+            if pet:IsA("Model") and pet.Parent == cam then
+                local start = tick()
+                local time_limit = 0.5
+                local found_mutation = nil
+
+                while tick() - start < time_limit do
+                    for _, name in ipairs(all_mutations) do
+                        if pet:GetAttribute(name) == true then
+                            found_mutation = name
+                            break
+                        end
+                    end
+                    if found_mutation then break end
+                    task.wait()
+                end
+                
+                if not found_mutation then
+                    Toggles.EnableBugMode:SetValue(true)
+                    send_hook("Unknown/Failed to read", false)
+                    return false
+                end
+
+                local mutation_wanted = Options.DesiredMutation.Value
+                if found_mutation == mutation_wanted then
+                    send_hook(found_mutation, true)
+                    return true 
+                else
+                    Toggles.EnableBugMode:SetValue(true)
+                    send_hook(found_mutation, false)
+                    task.wait(0.5)
+                    return false
                 end
             end
-            if not found_mutation then
-                send_hook("Unknown/Failed to read", false)
-                return false
-            end
-            local mutation_wanted = Options.DesiredMutation.Value
-            if found_mutation == mutation_wanted then
-                send_hook(found_mutation, true)
-                return true 
-            else
-                send_hook(found_mutation, false)
-                return false
-            end
+            return false
         end
 
-        -- Main task for the feature
+        -- Start a new task to wait for the gift notification
         task.spawn(function()
             Library:Notify('Auto Reroll enabled. Waiting for gift notification...')
             
             while Toggles.EnableAutoReroll.Value do
                 local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
                 local giftGui = playerGui:FindFirstChild("Gift_Notification")
-                local acceptButton = giftGui and giftGui:FindFirstChild("Frame", true) and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification") and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder") and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder"):FindFirstChild("Frame") and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder"):FindFirstChild("Frame"):FindFirstChild("Accept")
+                
+                -- Check if the gift notification and its 'Accept' button are visible
+                local acceptButton = giftGui 
+                    and giftGui:FindFirstChild("Frame", true)
+                    and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification")
+                    and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder")
+                    and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder"):FindFirstChild("Frame")
+                    and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder"):FindFirstChild("Frame"):FindFirstChild("Accept")
 
                 if acceptButton and acceptButton.Visible then
-                    Library:Notify("Gift notification found! Claiming pet...")
-                    remote:FireServer("ClaimMutatedPet")
+                    Library:Notify("Gift notification found! Starting reroll process.")
                     
-                    local foundPetModel = nil
-                    local startTime = tick()
-                    local timeout = 5
-
-                    while tick() - startTime < timeout do
-                        for _, child in ipairs(cam:GetChildren()) do
-                            if child:IsA("Model") and child:GetAttribute("Shiny") ~= nil then
-                                foundPetModel = child
-                                break
-                            end
-                        end
-                        if foundPetModel then break end
-                        task.wait(0.1)
+                    -- Disconnect any previous connection to be safe
+                    if autoRerollConnection then
+                        autoRerollConnection:Disconnect()
+                        autoRerollConnection = nil
                     end
 
-                    local isSuccess = foundPetModel and check_pet(foundPetModel)
-
-                    if isSuccess then
-                        Library:Notify("Target mutation found! Script stopped.")
-                        Toggles.EnableAutoReroll:SetValue(false)
-                    else
-                        -- This block handles any failure: timeout or wrong mutation.
-                        if not foundPetModel then
-                            Library:Notify("Reroll failed: Timed out waiting for pet model.", 3)
-                        else
-                            Library:Notify("Reroll failed: Did not get desired mutation.", 3)
-                        end
-
-                        if Toggles.HopOnFail.Value then
-                            if not isTeleporting then
-                                isTeleporting = true
-                                Library:Notify("Server hop enabled. Preparing to hop...", 2)
-                                
-                                -- Activate bug mode briefly to clear any stuck UI, then disable it.
-                                Library:Notify("Activating Bug Mode to clear UI...", 1)
-                                Toggles.EnableBugMode:SetValue(true)
-                                task.wait(2)
-                                Toggles.EnableBugMode:SetValue(false) 
-                                
-                                Library:Notify("Finding a new server...", 1)
-                                joinDifferentServer()
-                                break -- Exit the reroll loop to allow the teleport to proceed.
+                    -- Set up the listener for the new pet
+                    autoRerollConnection = cam.DescendantAdded:Connect(function(child)
+                        if check_pet(child) then
+                            if autoRerollConnection then
+                                autoRerollConnection:Disconnect()
+                                autoRerollConnection = nil
                             end
-                        else
-                            Library:Notify("Server hop is disabled. Stopping script.")
                             Toggles.EnableAutoReroll:SetValue(false)
+                            Library:Notify("Target mutation found! Script stopped.")
+                        else
+                            if autoRerollConnection then
+                                autoRerollConnection:Disconnect()
+                                autoRerollConnection = nil
+                            end
+                            Toggles.EnableAutoReroll:SetValue(false)
+                            Library:Notify("Reroll failed. Bug Mode activated.")
                         end
-                    end
+                    end)
+
+                    -- Fire the event to claim the pet
+                    remote:FireServer("ClaimMutatedPet")
+                    Library:Notify("Auto Reroll script started. Waiting for mutation roll...")
+                    
+                    break -- Exit the waiting loop
                 end
-                task.wait(0.5)
+                
+                task.wait(0.5) -- Wait before checking again
             end
         end)
+
     else
+        if autoRerollConnection then
+            autoRerollConnection:Disconnect()
+            autoRerollConnection = nil
+        end
         Library:Notify('Auto Reroll Disabled!')
     end
 end)
@@ -698,102 +666,63 @@ GiftHelperGroupBox:AddToggle('EnableBugMode', {
     Tooltip = 'Rapidly clicks Accept and Decline on gifts.'
 })
 
--- Services for the new logic
-local GuiService = game:GetService("GuiService")
-local Players = game:GetService("Players")
-local vim = game:GetService("VirtualInputManager")
-local player = Players.LocalPlayer
-
--- Reusable function to press Enter
-local function pressEnter()
-    vim:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-    task.wait(0.05)
-    vim:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-end
-
--- Function to find the gift frame and a specific button
-local function findGiftButton(buttonName)
-    local gui = player:WaitForChild("PlayerGui"):FindFirstChild("Gift_Notification")
-    if not gui then return nil, nil end
-
-    local frameExists, frame = pcall(function()
-        return gui:WaitForChild("Frame")
-            :WaitForChild("Gift_Notification")
-            :WaitForChild("Holder")
-            :WaitForChild("Frame")
-    end)
-
-    if not frameExists or not frame:IsDescendantOf(game) or not frame.Visible then
-        return nil, nil
-    end
-
-    local buttonExists, button = pcall(function()
-        return frame:FindFirstChild(buttonName)
-    end)
-
-    if buttonExists and button and button.Visible then
-        return frame, button
-    end
-
-    return nil, nil
-end
-
--- Logic for Auto Accept Gift
 local autoAcceptGiftLoopActive = false
+
+local function giftHelper_findAndClick(buttonNameToClick)
+    local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local giftGui = playerGui:FindFirstChild("Gift_Notification")
+    
+    if not giftGui then
+        return false
+    end
+    
+    local buttonHolder = giftGui:FindFirstChild("Frame", true)
+        and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification")
+        and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder")
+        and giftGui:FindFirstChild("Frame", true):FindFirstChild("Gift_Notification"):FindFirstChild("Holder"):FindFirstChild("Frame")
+        
+    if not buttonHolder then
+        return false
+    end
+
+    local targetButton = buttonHolder:FindFirstChild(buttonNameToClick)
+    
+    if targetButton then
+        pcall(function()
+            replicatesignal(targetButton.MouseButton1Click)
+        end)
+        return true
+    else
+        return false
+    end
+end
+
 Toggles.EnableAutoAcceptGift:OnChanged(function(value)
-    autoAcceptGiftLoopActive = value
     if value then
+        if autoAcceptGiftLoopActive then return end
+        autoAcceptGiftLoopActive = true
         Library:Notify('Auto Accept Gifts Enabled!')
         task.spawn(function()
-            while autoAcceptGiftLoopActive do
-                local frame, acceptButton = findGiftButton("Accept")
-                if frame and acceptButton then
-                    GuiService.SelectedObject = acceptButton
-                    -- Keep pressing as long as the button is valid
-                    while autoAcceptGiftLoopActive and frame:IsDescendantOf(game) and frame.Visible and acceptButton:IsDescendantOf(game) and acceptButton.Visible do
-                        pressEnter()
-                        --task.wait(0.25)
-                    end
-                    task.wait(0.01) -- Cleanup
-                    GuiService.SelectedObject = nil
-                end
-                task.wait(0.2)
+            while Toggles.EnableAutoAcceptGift.Value do
+                giftHelper_findAndClick("Accept")
+                task.wait(0.5)
             end
+            autoAcceptGiftLoopActive = false
         end)
     else
         Library:Notify('Auto Accept Gifts Disabled!')
     end
 end)
 
--- Logic for Bug Mode
-local bugModeLoopActive = false
 Toggles.EnableBugMode:OnChanged(function(value)
-    bugModeLoopActive = value
     if value then
         Library:Notify('Bug Mode Enabled!')
         task.spawn(function()
-            while bugModeLoopActive do
-                -- Try to accept
-                local acceptFrame, acceptButton = findGiftButton("Accept")
-                if acceptFrame and acceptButton then
-                    GuiService.SelectedObject = acceptButton
-                    pressEnter()
-                    task.wait(0.01) -- Cleanup
-                    GuiService.SelectedObject = nil
-                end
-                
+            while Toggles.EnableBugMode.Value do
+                giftHelper_findAndClick("Accept")
                 task.wait(0.1)
-                if not bugModeLoopActive then break end
-
-                -- Try to decline
-                local declineFrame, declineButton = findGiftButton("Decline")
-                if declineFrame and declineButton then
-                    GuiService.SelectedObject = declineButton
-                    pressEnter()
-                    task.wait(0.01) -- Cleanup
-                    GuiService.SelectedObject = nil
-                end
-                
+                if not Toggles.EnableBugMode.Value then break end
+                giftHelper_findAndClick("Decline")
                 task.wait(0.1)
             end
         end)
@@ -801,6 +730,86 @@ Toggles.EnableBugMode:OnChanged(function(value)
         Library:Notify('Bug Mode Disabled!')
     end
 end)
+
+-- =================================================================
+-- INFINITE SPRINKLER (Added by Gemini)
+-- =================================================================
+local SprinklerGroupBox = MiscTab:AddRightGroupbox('Infinite Sprinkler', 'bug')
+SprinklerGroupBox:AddDivider()
+
+SprinklerGroupBox:AddButton({
+    Text = 'Delete All Sprinklers',
+    Func = function()
+        task.spawn(function()
+            Library:Notify("Starting to delete sprinklers...", 2)
+            
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            local workspace = game:GetService("Workspace")
+
+            local function unequipAllTools()
+                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:UnequipTools()
+                end
+                task.wait(0.2)
+            end
+
+            local function equipShovel()
+                if not player.Character then 
+                    Library:Notify("Character not found!", 3)
+                    return false 
+                end
+                
+                -- Check if already equipped
+                for _, tool in pairs(player.Character:GetChildren()) do
+                    if tool:IsA("Tool") and tool.Name:lower():find("shovel") then
+                        return true -- already equipped
+                    end
+                end
+                
+                -- Search backpack
+                if player.Backpack then
+                    for _, tool in pairs(player.Backpack:GetChildren()) do
+                        if tool:IsA("Tool") and tool.Name:lower():find("shovel") then
+                            unequipAllTools()
+                            tool.Parent = player.Character
+                            task.wait(0.1) -- give time to equip
+                            return true
+                        end
+                    end
+                end
+
+                Library:Notify("Shovel not found in Backpack or Character!", 3)
+                return false
+            end
+
+            local DeleteObject = ReplicatedStorage:FindFirstChild("GameEvents", true) and ReplicatedStorage.GameEvents:FindFirstChild("DeleteObject")
+
+            if not (DeleteObject and DeleteObject:IsA("RemoteEvent")) then
+                Library:Notify("DeleteObject RemoteEvent not found!", 3)
+                return
+            end
+
+            if equipShovel() then
+                task.wait(0.3) -- wait for equip animation
+                local sprinklersDeleted = 0
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name:lower():find("sprinkler") then
+                        DeleteObject:FireServer(obj)
+                        sprinklersDeleted = sprinklersDeleted + 1
+                        task.wait(0.1) -- prevent lag
+                    end
+                end
+                Library:Notify("Deleted " .. sprinklersDeleted .. " sprinklers.", 3)
+            else
+                Library:Notify("Could not equip shovel. Aborting.", 3)
+            end
+        end)
+    end,
+    Tooltip = 'Equips a shovel and deletes all sprinklers in the workspace.'
+})
 
 
 -- Player Mods groupbox
@@ -846,139 +855,6 @@ MainGroupBox:AddToggle('MainInfJump', {
     end,
 })
 
--- =================================================================
--- NEW EGG ESP FEATURE (Rewritten by Gemini)
--- =================================================================
-local WorldESPGroupBox = MainTab:AddLeftGroupbox('World ESP', 'globe')
-WorldESPGroupBox:AddDivider()
-
-WorldESPGroupBox:AddToggle('EnableEggESP', {
-    Text = 'Enable Egg ESP',
-    Default = false,
-    Tooltip = 'Shows egg UUID and reveals pet when ready to hatch.'
-})
-
-local eggEspGuis = {}
-local readyHatchData = {} -- Stores pet name by UUID when ready
-local eggEspLoopActive = false
-local hatchListenerConnection = nil
-
-Toggles.EnableEggESP:OnChanged(function(value)
-    eggEspLoopActive = value
-    if value then
-        Library:Notify("Egg ESP Enabled!")
-        
-        -- Listen to the hatch event you discovered!
-        if not hatchListenerConnection then
-             hatchListenerConnection = game:GetService("ReplicatedStorage").GameEvents.EggReadyToHatch_RE.OnClientEvent:Connect(function(petName, eggUUID)
-                print("Hatch Event Fired! Pet: " .. petName .. ", UUID: " .. eggUUID)
-                readyHatchData[eggUUID] = petName
-            end)
-        end
-        
-        -- Start the main ESP loop
-        task.spawn(function()
-            local eggFolder = game:GetService("Workspace").Farm.Farm.Important.Objects_Physical.PetEgg
-            
-            while eggEspLoopActive do
-                local processedEggs = {}
-                
-                -- Create/Update ESP for existing eggs
-                for _, egg in ipairs(eggFolder:GetChildren()) do
-                    if egg:IsA("Model") then
-                        local eggUUID = egg:GetAttribute("uuid")
-                        if eggUUID then
-                            processedEggs[egg] = true -- Mark this egg as processed for this frame
-                            
-                            -- Create new GUI if it doesn't exist
-                            if not eggEspGuis[egg] then
-                                local espGui = Instance.new("BillboardGui")
-                                espGui.Name = "EggESP_" .. egg.Name
-                                espGui.Size = UDim2.new(0, 220, 0, 60)
-                                espGui.StudsOffset = Vector3.new(0, 5, 0)
-                                espGui.AlwaysOnTop = true
-                                espGui.Adornee = egg
-                                espGui.Parent = game.CoreGui
-
-                                local backgroundFrame = Instance.new("Frame")
-                                backgroundFrame.Size = UDim2.new(1, 0, 1, 0)
-                                backgroundFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                                backgroundFrame.BackgroundTransparency = 0.4
-                                backgroundFrame.Parent = espGui
-                                local corner = Instance.new("UICorner")
-                                corner.CornerRadius = UDim.new(0, 8)
-                                corner.Parent = backgroundFrame
-                                local stroke = Instance.new("UIStroke")
-                                stroke.Color = Color3.fromRGB(255, 255, 255)
-                                stroke.Thickness = 1.5
-                                stroke.Transparency = 0.3
-                                stroke.Parent = backgroundFrame
-
-                                local infoLabel = Instance.new("TextLabel")
-                                infoLabel.Size = UDim2.new(1, -10, 1, -10)
-                                infoLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
-                                infoLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-                                infoLabel.BackgroundTransparency = 1
-                                infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                                infoLabel.TextScaled = false
-                                infoLabel.TextSize = 14
-                                infoLabel.Font = Enum.Font.Gotham
-                                infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-                                infoLabel.RichText = true
-                                infoLabel.Parent = espGui
-
-                                eggEspGuis[egg] = {gui = espGui, label = infoLabel}
-                            end
-
-                            -- Update the info label
-                            local espData = eggEspGuis[egg]
-                            local petName = readyHatchData[eggUUID]
-
-                            if petName then
-                                -- It's ready to hatch! Show the pet name.
-                                espData.label.Text = string.format(
-                                    "<font color='rgb(0,255,0)'><b>READY TO HATCH!</b></font>\n<font color='rgb(0,255,255)'>Pet:</font> %s",
-                                    petName
-                                )
-                            else
-                                -- Not ready yet, just show UUID.
-                                espData.label.Text = string.format(
-                                    "<font color='rgb(255,255,0)'>UUID:</font>\n%s",
-                                    eggUUID
-                                )
-                            end
-                        end
-                    end
-                end
-
-                -- Remove ESPs for eggs that no longer exist
-                for egg, espData in pairs(eggEspGuis) do
-                    if not processedEggs[egg] then
-                        espData.gui:Destroy()
-                        eggEspGuis[egg] = nil
-                        if egg:GetAttribute("uuid") then
-                           readyHatchData[egg:GetAttribute("uuid")] = nil -- Clean up hatch data
-                        end
-                    end
-                end
-                task.wait(0.5) -- Check every half-second
-            end
-        end)
-    else
-        Library:Notify("Egg ESP Disabled!")
-        -- Disconnect the listener when disabled
-        if hatchListenerConnection then
-            hatchListenerConnection:Disconnect()
-            hatchListenerConnection = nil
-        end
-        -- Cleanup all existing egg ESPs
-        for egg, espData in pairs(eggEspGuis) do
-            espData.gui:Destroy()
-        end
-        eggEspGuis = {}
-        readyHatchData = {}
-    end
-end)
 
 
 -- Function to join a different, non-full server with a retry loop
@@ -1043,6 +919,119 @@ local function joinDifferentServer()
     end)
 end
 
+-- Teleport to Friend Functions
+local http_service = game:GetService("HttpService")
+local teleport_service = game:GetService("TeleportService")
+local players_service = game:GetService("Players")
+local local_player = players_service.LocalPlayer
+
+local function make_request(url, method, body)
+    local req_func = (syn and syn.request) or http_request or request
+    if not req_func then
+        Library:Notify("HTTP request function not available.", 3)
+        return nil
+    end
+    
+    local success, response = pcall(function()
+        return req_func({Url = url, Method = method or "GET", Body = body})
+    end)
+    
+    if success and response and response.Success and response.Body then
+        local decode_success, data = pcall(http_service.JSONDecode, http_service, response.Body)
+        if decode_success then
+            return data
+        end
+    end
+    return nil
+end
+
+function RefreshFriendsList()
+    Library:Notify("Fetching friends list... This may take a moment.", 2)
+    task.spawn(function()
+        local friends_url = "https://friends.roblox.com/v1/users/" .. local_player.UserId .. "/friends"
+        local friends_data = make_request(friends_url)
+        
+        if not friends_data or not friends_data.data then
+            Library:Notify("Failed to fetch friends list.", 3)
+            Options.FriendSelector:SetValues({"Error fetching friends"})
+            return
+        end
+        
+        local friend_names = {}
+        for _, friend in ipairs(friends_data.data) do
+            table.insert(friend_names, friend.name)
+        end
+        
+        if #friend_names > 0 then
+            table.sort(friend_names) -- Sort alphabetically
+            Options.FriendSelector:SetValues(friend_names)
+            Library:Notify("Successfully fetched " .. #friend_names .. " friends.", 2)
+        else
+            Options.FriendSelector:SetValues({"No friends found"})
+            Library:Notify("You have no friends on Roblox.", 2)
+        end
+    end)
+end
+
+function TeleportToSelectedFriend()
+    local selected_friend_name = Options.FriendSelector.Value
+    if not selected_friend_name or selected_friend_name:find("No friends") or selected_friend_name:find("Error") then
+        Library:Notify("Please select a valid friend.", 2)
+        return
+    end
+
+    Library:Notify("Searching for " .. selected_friend_name .. "...", 2)
+    
+    task.spawn(function()
+        -- First, get the friend's UserId
+        local user_search_url = "https://users.roblox.com/v1/usernames/users"
+        local search_payload = http_service:JSONEncode({usernames = {selected_friend_name}, excludeBannedUsers = true})
+        local user_data = make_request(user_search_url, "POST", search_payload)
+        
+        if not user_data or not user_data.data or #user_data.data == 0 then
+            Library:Notify("Could not find UserId for " .. selected_friend_name, 3)
+            return
+        end
+        
+        local friend_id = user_data.data[1].id
+        
+        -- Now, check their presence
+        local presence_url = "https://presence.roblox.com/v1/presence/users"
+        local presence_payload = http_service:JSONEncode({userIds = {friend_id}})
+        local presence_data = make_request(presence_url, "POST", presence_payload)
+        
+        if not presence_data or not presence_data.userPresences or #presence_data.userPresences == 0 then
+            Library:Notify("Could not get presence for " .. selected_friend_name, 3)
+            return
+        end
+        
+        local friend_presence = presence_data.userPresences[1]
+        
+        -- --- DIAGNOSTIC NOTIFICATIONS ---
+        local friend_universeId = friend_presence.universeId or "N/A"
+        local current_gameId = game.GameId or "N/A"
+        Library:Notify("Friend UniverseID: " .. tostring(friend_universeId), 4)
+        Library:Notify("Current GameID: " .. tostring(current_gameId), 4)
+        -- --- END DIAGNOSTICS ---
+
+        -- Correctly check if the friend is in the same game (Universe)
+        if friend_presence.userPresenceType == 2 and tostring(friend_presence.universeId) == tostring(game.GameId) then
+            Library:Notify("Friend found in this game! Teleporting...", 2)
+            -- Teleport using the JobId (gameId in presence API) of the friend's server
+            pcall(teleport_service.TeleportToPlaceInstance, teleport_service, game.PlaceId, friend_presence.gameId, local_player)
+        else
+            -- Provide more detailed feedback if the check fails
+            local reason = "is not online."
+            if friend_presence.userPresenceType == 1 then
+                reason = "is online, but not in a game."
+            elseif friend_presence.userPresenceType == 2 then
+                reason = "is in a different game. (Friend: " .. tostring(friend_universeId) .. " | You: " .. tostring(current_gameId) .. ")"
+            end
+            Library:Notify(selected_friend_name .. " " .. reason, 5)
+        end
+    end)
+end
+
 -- Reconnect groupbox (clickable title to expand/collapse)
 local ReconnectGroupBox = MainTab:AddRightGroupbox('Reconnect', 'wifi-cog')
 
@@ -1087,13 +1076,42 @@ ReconnectGroupBox:AddButton({
     Tooltip = 'Reconnects you to the current game immediately.'
 })
 
--- Add button to join a different server
+-- Add join different server button
 ReconnectGroupBox:AddButton({
     Text = 'Join Different Server',
     Func = function()
         joinDifferentServer()
     end,
     Tooltip = 'Finds and joins a different, non-full server.'
+})
+
+-- Teleport to Friend groupbox
+local TeleportFriendGroupBox = MainTab:AddRightGroupbox('Teleport to Friend', 'users')
+TeleportFriendGroupBox:AddDivider()
+
+TeleportFriendGroupBox:AddDropdown('FriendSelector', {
+    Values = {"Click Refresh to load"},
+    Default = nil,
+    Multi = false,
+    Text = 'Select Friend',
+    Tooltip = 'Select a friend to join their server.',
+    Searchable = true,
+})
+
+TeleportFriendGroupBox:AddButton({
+    Text = 'Refresh Friends List',
+    Func = function()
+        RefreshFriendsList()
+    end,
+    Tooltip = 'Gets your full Roblox friends list.'
+})
+
+TeleportFriendGroupBox:AddButton({
+    Text = 'Join Friend\'s Server',
+    Func = function()
+        TeleportToSelectedFriend()
+    end,
+    Tooltip = 'Joins the selected friend\'s server if they are in this game.'
 })
 
 -- Always reconnect logic
@@ -1137,78 +1155,65 @@ local function CreateAlwaysReconnectButton()
     end)
 end
 
-local function EnableAlwaysReconnect()
-    -- Set up the connection that triggers on death/disconnect
-    if alwaysReconnectConnection then alwaysReconnectConnection:Disconnect() end
-    local Players = game:GetService("Players")
-    local player = Players.LocalPlayer
-    alwaysReconnectConnection = player.CharacterRemoving:Connect(function()
-        task.wait(0.5)
-        if Toggles.AlwaysReconnect.Value then
-            reconnectCancelFlag = false
+Toggles.AlwaysReconnect:OnChanged(function()
+    if Toggles.AlwaysReconnect.Value then
+        if alwaysReconnectConnection then alwaysReconnectConnection:Disconnect() end
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        alwaysReconnectConnection = player.CharacterRemoving:Connect(function()
+            -- Wait a short moment to ensure character is removed
+            task.wait(0.5)
             ShowReconnectNotificationAndTeleport()
-        end
-    end)
-    
-    -- Create the UI button to cancel it
-    CreateAlwaysReconnectButton()
-    
-    -- Don't trigger an immediate reconnect. Just arm the feature.
-    Library:Notify('Always Reconnect Armed! Will reconnect on death/disconnect.')
-end
-
-local function DisableAlwaysReconnect()
-    if alwaysReconnectConnection then alwaysReconnectConnection:Disconnect() end
-    alwaysReconnectConnection = nil
-    if floatingButton then 
-        floatingButton:Destroy()
-        floatingButton = nil
-    end
-    reconnectCancelFlag = true
-    Library:Notify('Always Reconnect Disabled!')
-end
-
-Toggles.AlwaysReconnect:OnChanged(function(value)
-    if value then
-        EnableAlwaysReconnect()
+        end)
+        -- Create floating button BEFORE triggering reconnect logic
+        CreateAlwaysReconnectButton()
+        -- Reset cancel flag and trigger reconnect logic
+        reconnectCancelFlag = false
+        ShowReconnectNotificationAndTeleport()
     else
-        DisableAlwaysReconnect()
+        if alwaysReconnectConnection then alwaysReconnectConnection:Disconnect() end
+        alwaysReconnectConnection = nil
+        -- Remove floating button
+        if floatingButton then 
+            floatingButton:Destroy()
+            floatingButton = nil
+        end
+        reconnectCancelFlag = true
+        Library:Notify('Always Reconnect cancelled!')
     end
 end)
 
--- The startup check is now handled in the task.spawn at the end of the script
--- to ensure saved settings are loaded first.
+-- If the toggle is already enabled at script start, trigger logic and show button
+if Toggles.AlwaysReconnect and Toggles.AlwaysReconnect.Value then
+    CreateAlwaysReconnectButton()
+    ShowReconnectNotificationAndTeleport()
+end
 
 function ShowReconnectNotificationAndTeleport(immediate)
-    task.spawn(function()
-        task.wait(0.2) -- Added a minimal delay to ensure SaveManager has loaded the config value.
-
-        -- Reset cancel flag for manual reconnects
-        if not (Toggles.AlwaysReconnect and Toggles.AlwaysReconnect.Value) then
-            reconnectCancelFlag = false
-        end
-        local TeleportService = game:GetService("TeleportService")
-        local Players = game:GetService("Players")
-        local player = Players.LocalPlayer
-
-        -- Read the delay value here, after the small wait, ensuring the correct value is loaded.
-        local delayValue = tonumber(Options.ReconnectDelay.Value) or 3
-        if delayValue < 3 then delayValue = 3 end
-        if immediate then delayValue = 0 end
-        
-        for i = delayValue, 1, -1 do
-            if reconnectCancelFlag then return end
-            Library:Notify("Reconnecting in " .. i .. "s...")
-            task.wait(1)
-        end
-        
+    -- Reset cancel flag for manual reconnects
+    if not (Toggles.AlwaysReconnect and Toggles.AlwaysReconnect.Value) then
+        reconnectCancelFlag = false
+    end
+    local TeleportService = game:GetService("TeleportService")
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local delayValue = tonumber(Options.ReconnectDelay.Value) or 3
+    if delayValue < 3 then delayValue = 3 end
+    if immediate then delayValue = 0 end
+    for i = delayValue, 1, -1 do
         if reconnectCancelFlag then return end
-        Library:Notify("Reconnecting...")
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, player)
-        end)
-    end)
+        Library:Notify("Reconnecting in " .. i .. "s...")
+        task.wait(1)
+    end
+    if reconnectCancelFlag then return end
+    Library:Notify("Reconnecting...")
+    TeleportService:Teleport(game.PlaceId, player)
 end
+
+-- Add service and player setup at the top
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local UserInputService = game:GetService('UserInputService')
 
 local speedConnection = nil
 local noclipConnection = nil
@@ -1291,6 +1296,151 @@ function ToggleInfiniteJump(enabled)
         infJumpConnection = nil
     end
 end
+
+-- =================================================================
+-- AUTO PICKUP AND PLACE PET FEATURE (Added by Gemini)
+-- =================================================================
+local AutoPickupPlaceGroupBox = PetsTab:AddLeftGroupbox('Pickup and Place Pet', 'hand')
+AutoPickupPlaceGroupBox:AddDivider()
+
+AutoPickupPlaceGroupBox:AddDropdown('TargetPet', {
+    Values = {},
+    Default = nil,
+    Multi = false,
+    Text = 'Target Pet',
+    Tooltip = 'Select the pet to monitor for cooldown.',
+    Searchable = true,
+})
+
+AutoPickupPlaceGroupBox:AddInput('CooldownInput', {
+    Default = '0',
+    Numeric = true,
+    Finished = true,
+    Text = 'Cooldown Input',
+    Tooltip = 'Set the cooldown threshold.',
+})
+
+AutoPickupPlaceGroupBox:AddDropdown('PetsToPickupPlace', {
+    Values = {},
+    Default = {},
+    Multi = true,
+    Text = 'Select Pets to Pickup and Place',
+    Tooltip = 'Select the pets to be picked up or placed.',
+    Searchable = true,
+})
+
+AutoPickupPlaceGroupBox:AddDropdown('PetToSwap', {
+    Values = {},
+    Default = nil,
+    Multi = false,
+    Text = 'Select Pet to Swap',
+    Tooltip = 'Select the pet to place when others are picked up.',
+    Searchable = true,
+})
+
+AutoPickupPlaceGroupBox:AddToggle('EnableAutoPickupPlace', {
+    Text = 'Enable Auto Pickup/Place',
+    Default = false,
+    Tooltip = 'Automatically picks up or places pets based on the target pet\'s cooldown.'
+})
+
+local autoPickupPlaceActive = false
+local lastPickupPlaceAction = nil -- Tracks the last action to prevent notification spam
+
+Toggles.EnableAutoPickupPlace:OnChanged(function(value)
+    autoPickupPlaceActive = value
+    if value then
+        lastPickupPlaceAction = nil -- Reset on enable
+        Library:Notify('Auto Pickup/Place Enabled!', 2)
+        task.spawn(function()
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local PetsService = ReplicatedStorage.GameEvents.PetsService
+            local GetPetCooldown = ReplicatedStorage.GameEvents.GetPetCooldown
+            local petUUIDMapping = _G.PetUUIDMapping or {}
+
+            while autoPickupPlaceActive do
+                local targetPetName = Options.TargetPet.Value
+                local cooldownThreshold = tonumber(Options.CooldownInput.Value) or 0
+                local selectedPetsToActOn = Options.PetsToPickupPlace.Value
+                
+                if not targetPetName or not selectedPetsToActOn or next(selectedPetsToActOn) == nil then
+                    task.wait(1)
+                else
+                    local targetPetUUID = petUUIDMapping[targetPetName]
+                    if targetPetUUID then
+                        local success, cooldownData = pcall(function()
+                            return GetPetCooldown:InvokeServer(targetPetUUID)
+                        end)
+
+                        if success and type(cooldownData) == "table" and cooldownData[1] and cooldownData[1].Time then
+                            local currentCooldown = tonumber(cooldownData[1].Time) or 0
+
+                            local petsToActOnUUIDs = {}
+                            for petName, isSelected in pairs(selectedPetsToActOn) do
+                                if isSelected then
+                                    if petName == "All" then
+                                        petsToActOnUUIDs = {}
+                                        for _, uuid in pairs(petUUIDMapping) do table.insert(petsToActOnUUIDs, uuid) end
+                                        break
+                                    else
+                                        local uuid = petUUIDMapping[petName]
+                                        if uuid then table.insert(petsToActOnUUIDs, uuid) end
+                                    end
+                                end
+                            end
+
+                            if currentCooldown <= cooldownThreshold then
+                                if lastPickupPlaceAction ~= "pickup" then
+                                    Library:Notify("Target pet cooldown is low. Picking up pets.", 1)
+                                    lastPickupPlaceAction = "pickup"
+                                    -- Pickup pets
+                                    for _, petUUID in ipairs(petsToActOnUUIDs) do
+                                        if not autoPickupPlaceActive then break end
+                                        PetsService:FireServer("UnequipPet", petUUID)
+                                        task.wait(0.2)
+                                    end
+                                    -- Swap pet
+                                    local petToSwapName = Options.PetToSwap.Value
+                                    if petToSwapName then
+                                        local petToSwapUUID = petUUIDMapping[petToSwapName]
+                                        if petToSwapUUID then
+                                            local placeCFrame = CFrame.new(47, 0, -95, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                                            PetsService:FireServer("EquipPet", petToSwapUUID, placeCFrame)
+                                        end
+                                    end
+                                end
+                            else
+                                if lastPickupPlaceAction ~= "place" then
+                                    Library:Notify("Target pet cooldown is high. Placing pets.", 1)
+                                    lastPickupPlaceAction = "place"
+                                    -- Place pets
+                                    for _, petUUID in ipairs(petsToActOnUUIDs) do
+                                        if not autoPickupPlaceActive then break end
+                                        local placeCFrame = CFrame.new(47, 0, -95, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                                        PetsService:FireServer("EquipPet", petUUID, placeCFrame)
+                                        task.wait(0.2)
+                                    end
+                                    -- Pick up the swapped pet to complete the swap
+                                    local petToSwapName = Options.PetToSwap.Value
+                                    if petToSwapName then
+                                        local petToSwapUUID = petUUIDMapping[petToSwapName]
+                                        if petToSwapUUID then
+                                            PetsService:FireServer("UnequipPet", petToSwapUUID)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                task.wait(2) -- Wait 2 seconds before the next check
+            end
+        end)
+    else
+        Library:Notify('Auto Pickup/Place Disabled!', 2)
+    end
+end)
+
 
 -- Pet ESP groupbox (moved to Pets tab)
 local PetManagerGroupBox = PetsTab:AddLeftGroupbox('Pet ESP', 'eye')
@@ -1535,8 +1685,6 @@ Toggles.EnableAutoFeed:OnChanged(function(value)
         Library:Notify('Auto Feed Disabled!', 2)
     end
 end)
-
-
 
 -- Ensure toggles are properly connected to config system
 Toggles.PetCDESP:OnChanged(function(Value)
@@ -1801,6 +1949,9 @@ function RefreshPetUUIDs()
         -- Update all relevant dropdowns with pet types
         Options.PetUUIDs:SetValues(petTypes)
         Options.FeedPetSelection:SetValues(petTypes)
+        Options.TargetPet:SetValues(petTypes)
+        Options.PetsToPickupPlace:SetValues(petTypes)
+        Options.PetToSwap:SetValues(petTypes)
         
         Library:Notify("Found " .. (#petTypes - 1) .. " pets and updated all dropdowns!")
         
@@ -1996,7 +2147,7 @@ end
 -- =================================================================
 -- PLANTS TAB
 -- =================================================================
-local AutoPlantGroupBox = PlantsTab:AddLeftGroupbox('Auto Plant', 'seedling')
+local AutoPlantGroupBox = PlantsTab:AddLeftGroupbox('Auto Plant', 'sprout')
 AutoPlantGroupBox:AddDivider()
 
 -- Dropdown to select seeds from the backpack
@@ -2615,7 +2766,8 @@ SaveManager:BuildConfigSection(SettingsTab)
 -- Builds our theme menu (with plenty of built in themes) on the left side
 ThemeManager:ApplyToTab(SettingsTab)
 
--- Config is now loaded in the final task.spawn to ensure all game data is ready.
+-- You can use the SaveManager:LoadAutoloadConfig() to load a config
+SaveManager:LoadAutoloadConfig()
 
 -- Destroy loading screen as UI is now ready
 if loadingScreen then
@@ -2652,30 +2804,18 @@ Library:OnUnload(function()
     Library.Unloaded = true
 end)
 
--- Auto-refresh and load config when script starts
+-- Auto-refresh pet UUIDs when script starts
 task.spawn(function()
-    task.wait(3) -- Wait for game and UI to fully load
-    
-    -- Refresh all data-dependent UI elements
+    task.wait(2) -- Wait a bit for the UI to load
     RefreshPetUUIDs()
-    RefreshBackpackSeeds()
+    RefreshBackpackSeeds() -- Refresh backpack seeds on startup
+    RefreshFriendsList() -- Refresh friends list on startup
     RefreshPlayerListForSender()
     
-    -- Load the saved config now that UI elements are populated
-    SaveManager:LoadAutoloadConfig()
-    
-    -- Now, check for features that should be enabled on startup based on the loaded config
+    -- Check if ESP was enabled in saved config and start it
+    task.wait(1) -- Wait a bit more for config to load
     if Toggles.PetCDESP and Toggles.PetCDESP.Value then
         StartPetCDESP()
-    end
-
-    if Toggles.AlwaysReconnect and Toggles.AlwaysReconnect.Value then
-        EnableAlwaysReconnect()
-    end
-
-    if Toggles.EnableAutoSend and Toggles.EnableAutoSend.Value then
-        -- This will trigger the OnChanged event and start the auto-send logic
-        Toggles.EnableAutoSend:SetValue(true)
     end
 end)
 
@@ -2762,7 +2902,7 @@ local function modifyTeleportUI()
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
-            Library:Notify("Teleporting to Event location...", 0.5)
+            --Library:Notify("Teleporting to Event location...", 0.5)
         else
             warn("Character or HumanoidRootPart not found for teleportation.")
             Library:Notify("Event teleport failed: Character not ready!")
