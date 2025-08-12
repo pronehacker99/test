@@ -261,68 +261,38 @@ end)
 -- =================================================================
 -- SENDER
 -- =================================================================
-local senderEnabled = fasle -- Default to true
-
 local SenderGroupBox = VulnTab:AddRightGroupbox('Sender', 'send')
 SenderGroupBox:AddDivider()
 
--- Add a toggle to show/hide the sender feature
-local senderControls = {}
-
-table.insert(senderControls, SenderGroupBox:AddDropdown('TargetPlayer', {
+SenderGroupBox:AddDropdown('TargetPlayer', {
     Values = {},
     Default = nil,
     Multi = false,
     Text = 'Select Target Player',
     Tooltip = 'Select a player to send a carrot to.'
-}))
+})
 
-table.insert(senderControls, SenderGroupBox:AddButton({
+SenderGroupBox:AddButton({
     Text = 'Refresh Player List',
     Func = function()
         RefreshPlayerListForSender()
     end,
     Tooltip = 'Updates the list of players in the server.'
-}))
+})
 
-table.insert(senderControls, SenderGroupBox:AddToggle('EnableAutoSend', {
+SenderGroupBox:AddToggle('EnableAutoSend', {
     Text = 'Auto Send Carrot to Target',
     Default = false,
     Tooltip = 'When enabled, automatically finds the saved player and sends a carrot.'
-}))
+})
 
-table.insert(senderControls, SenderGroupBox:AddInput('SendDelay', {
+SenderGroupBox:AddInput('SendDelay', {
     Default = '35',
     Numeric = true,
     Finished = true,
     Text = 'Delay (seconds)',
     Tooltip = 'Set the delay in seconds before sending another gift.'
-}))
-
-local function setSenderVisibility(value)
-    senderEnabled = value
-    for _, control in ipairs(senderControls) do
-        if control and control.Visible ~= nil then
-            control.Visible = value
-        end
-    end
-    -- Also toggle the visibility of the groupbox itself, if the library supports it.
-    if SenderGroupBox.Visible ~= nil then
-        SenderGroupBox.Visible = value
-    end
-end
-
-SenderGroupBox:AddToggle('ShowSender', {
-    Text = 'Show Sender Feature',
-    Default = senderEnabled,
-    Tooltip = 'Toggles the visibility of the Sender UI.',
-    Callback = function(value)
-        setSenderVisibility(value)
-    end
 })
-
--- Set initial visibility
-setSenderVisibility(senderEnabled)
 
 -- Helper function to find a tool with "Carrot" in its name
 local function findCarrotToolForSender()
