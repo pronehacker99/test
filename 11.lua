@@ -101,7 +101,8 @@ local function attachEspToWeight(weightValue: NumberValue)
 
 	local gui = createBillboard(adornee)
 	weightValueToGui[weightValue] = gui
-	modelToGui[adornee:GetAncestorOfClass("Model") or adornee] = gui
+	local ancModel = adornee:FindFirstAncestorOfClass("Model")
+	modelToGui[ancModel or adornee] = gui
 
 	local function update()
 		local text = formatKg(weightValue.Value)
