@@ -108,6 +108,17 @@ local function getModelPivotPosition(m: Model): Vector3?
 	return bp and bp.Position or nil
 end
 
+local function findAncestorFolderByName(inst: Instance, folderName: string): Instance?
+	local cur = inst.Parent
+	while cur do
+		if cur:IsA("Folder") and cur.Name == folderName then
+			return cur
+		end
+		cur = cur.Parent
+	end
+	return nil
+end
+
 local function getModelExtentsMagnitude(m: Model): number
 	local ok, size = pcall(function()
 		return m:GetExtentsSize()
@@ -135,6 +146,35 @@ local function normalizeName(s: string): string
 end
 
 local function getFruitModelFromWeight(weightValue: NumberValue): Instance
+	-- 1) If this weight lives under a 'Fruits' folder, return the specific fruit model child
+	local fruitsFolder = findAncestorFolderByName(weightValue, "Fruits")
+	if fruitsFolder then
+		for _, child in ipairs(fruitsFolder:GetChildren()) do
+			if child:IsA("Model") and weightValue:IsDescendantOf(child) then
+				return child
+			end
+		end
+		-- As a fallback, pick the closest small model under the Fruits folder
+		local allFruitModels: {Model} = {}
+		for _, child in ipairs(fruitsFolder:GetChildren()) do
+			if child:IsA("Model") then table.insert(allFruitModels, child) end
+		end
+		if #allFruitModels > 0 then
+			local weightPart = findFirstBasePart(weightValue.Parent)
+			local weightPos = weightPart and weightPart.Position or nil
+			local best, bestScore = nil, math.huge
+			for _, m in ipairs(allFruitModels) do
+				local sizeMag = getModelExtentsMagnitude(m)
+				local pos = getModelPivotPosition(m) or weightPos
+				local dist = (weightPos and pos) and (pos - weightPos).Magnitude or 0
+				local score = dist + sizeMag * 0.25
+				if score < bestScore then best, bestScore = m, score end
+			end
+			if best then return best end
+		end
+	end
+
+	-- 2) Otherwise, pick among ancestors with strong filters (non-placeable, non-tree), favoring small/close
 	local ancestorModels: {Model} = {}
 	local cur = weightValue:FindFirstAncestorOfClass("Model")
 	while cur and cur:IsA("Model") do
