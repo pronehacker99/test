@@ -2932,8 +2932,121 @@ AutoPlaceEggsGroupBox:AddToggle('EnableAutoPlaceEggs', {
 	Tooltip = 'Toggle auto placing of the selected egg.'
 })
 
+-- Function to get all available eggs
+local function RefreshEggList()
+    local EggModels = game:GetService("ReplicatedStorage").Assets.Models.EggModels
+    local EggList = {}
+    
+    for _, egg in ipairs(EggModels:GetChildren()) do
+        table.insert(EggList, egg.Name)
+    end
+    
+    Options.AutoPlaceEggSelection:SetValues(EggList)
+    return EggList
+end
+
 AutoPlaceEggsGroupBox:AddDropdown('AutoPlaceEggSelection', {
 	Values = {},
 	Default = nil,
-	Tooltip = 'Select which egg to place.'
+	Tooltip = 'Select which egg to place.',
+    AllowNull = true
 })
+
+-- Add a button to refresh egg list
+AutoPlaceEggsGroupBox:AddButton('Refresh Eggs', RefreshEggList)
+
+-- Add a vector3 input for egg placement position
+AutoPlaceEggsGroupBox:AddLabel('Egg Placement Position:')
+AutoPlaceEggsGroupBox:AddInput('EggPlaceX', {
+    Text = 'X Position',
+    Default = '74',
+    Numeric = true,
+    Finished = true
+})
+
+AutoPlaceEggsGroupBox:AddInput('EggPlaceY', {
+    Text = 'Y Position',
+    Default = '0',
+    Numeric = true,
+    Finished = true
+})
+
+AutoPlaceEggsGroupBox:AddInput('EggPlaceZ', {
+    Text = 'Z Position',
+    Default = '-98',
+    Numeric = true,
+    Finished = true
+})
+
+-- Initialize egg list on load
+RefreshEggList()
+
+-- Auto Place Egg Functionality
+local function AutoPlaceEgg()
+    -- Get the selected egg
+    local selectedEgg = Options.AutoPlaceEggSelection.Value
+    
+    -- Check if an egg is selected
+    if not selectedEgg then
+        Library:Notify("Please select an egg to place first.", 3)
+        return
+    end
+    
+    -- Use the equipItem function to equip the egg
+    if not equipItem(selectedEgg) then
+        Library:Notify("Could not find or equip " .. selectedEgg .. ". Make sure you have it.", 3)
+        return
+    end
+    
+    -- Small delay to ensure egg is equipped
+    task.wait(0.3)
+    
+    -- Get the position from the inputs
+    local posX = tonumber(Options.EggPlaceX.Value) or 74
+    local posY = tonumber(Options.EggPlaceY.Value) or 0
+    local posZ = tonumber(Options.EggPlaceZ.Value) or -98
+    local position = Vector3.new(posX, posY, posZ)
+    
+    -- Place the egg
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local PetEggService = ReplicatedStorage.GameEvents.PetEggService
+    PetEggService:FireServer("CreateEgg", position)
+    
+    -- Notify that the egg was placed
+    Library:Notify("Placed " .. selectedEgg .. " at position " .. tostring(position), 3)
+end
+
+-- Add a button to manually place an egg
+AutoPlaceEggsGroupBox:AddButton('Place Egg Once', AutoPlaceEgg)
+
+-- Create a loop for auto placing
+local autoPlaceEggLoop = nil
+
+Toggles.EnableAutoPlaceEggs:OnChanged(function()
+    if Toggles.EnableAutoPlaceEggs.Value then
+        -- Start the auto place egg loop
+        if autoPlaceEggLoop then
+            autoPlaceEggLoop:Disconnect()
+        end
+        
+        autoPlaceEggLoop = RunService.Heartbeat:Connect(function()
+            if Toggles.EnableAutoPlaceEggs.Value then
+                AutoPlaceEgg()
+                task.wait(1) -- Wait 1 second between placements
+            end
+        end)
+        
+        Library:Notify("Auto Place Eggs enabled", 3)
+    else
+        -- Stop the auto place egg loop
+        if autoPlaceEggLoop then
+            autoPlaceEggLoop:Disconnect()
+            autoPlaceEggLoop = nil
+        end
+        
+        -- Unequip the tool when disabled
+        unequipItem()
+        
+        Library:Notify("Auto Place Eggs disabled", 3)
+    end
+end)
