@@ -81,36 +81,77 @@ local FRUIT_NAME_WHITELIST: {[string]: boolean} = {
 	["Artichoke"] = true, ["Spring Onion"] = true,
 }
 
+local function getModelExtentsMagnitude(m: Model): number
+	local ok, size = pcall(function()
+		return m:GetExtentsSize()
+	end)
+	if ok and typeof(size) == "Vector3" then
+		return (size.X * size.X + size.Y * size.Y + size.Z * size.Z) ^ 0.5
+	end
+	return math.huge
+end
+
+local function isProbablyTreeOrStructure(m: Model): boolean
+	if CollectionService:HasTag(m, "PlaceableObject") then return true end
+	if CollectionService:HasTag(m, "Tree") then return true end
+	local lname = string.lower(m.Name or "")
+	if lname:find("tree") or lname:find("sapling") or lname:find("trunk") or lname:find("stump") or lname:find("bush") then
+		return true
+	end
+	return false
+end
+
+local function normalizeName(s: string): string
+	local out = s or ""
+	out = out:gsub("_%d+$", ""):gsub("%d+$", ""):gsub("_", " "):gsub("%s+", " ")
+	return (out:match("^%s*(.-)%s*$") or out)
+end
+
 local function getFruitModelFromWeight(weightValue: NumberValue): Instance
-	-- Prefer the smallest ancestor Model whose normalized name matches a known fruit/produce
-	-- Avoid targeting placeable objects (trees, structures)
 	local ancestorModels: {Model} = {}
 	local cur = weightValue:FindFirstAncestorOfClass("Model")
 	while cur and cur:IsA("Model") do
 		table.insert(ancestorModels, cur)
-		local nextModel = cur.Parent and cur.Parent:FindFirstAncestorOfClass("Model") or nil
-		cur = nextModel
+		cur = cur.Parent and cur.Parent:FindFirstAncestorOfClass("Model") or nil
 	end
 
+	local candidatesGrowable: {Model} = {}
+	local candidatesWhitelist: {Model} = {}
+	local candidatesSafe: {Model} = {}
+
 	for _, m in ipairs(ancestorModels) do
-		local name = m.Name and m.Name or ""
-		local norm = name
-		norm = norm:gsub("_%d+$", ""):gsub("%d+$", ""):gsub("_", " "):gsub("%s+", " ")
-		norm = (norm:match("^%s*(.-)%s*$") or norm)
-		if FRUIT_NAME_WHITELIST[norm] then
-			return m
+		local norm = normalizeName(m.Name or "")
+		local isGrowable = CollectionService:HasTag(m, "Growable")
+		local isPlaceable = CollectionService:HasTag(m, "PlaceableObject")
+		local isTreeLike = isProbablyTreeOrStructure(m)
+		if FRUIT_NAME_WHITELIST[norm] and not isPlaceable and not isTreeLike then
+			table.insert(candidatesWhitelist, m)
+		end
+		if isGrowable and not isPlaceable and not isTreeLike then
+			table.insert(candidatesGrowable, m)
+		end
+		if not isPlaceable and not isTreeLike then
+			table.insert(candidatesSafe, m)
 		end
 	end
 
-	-- If none matched, pick the nearest ancestor that is NOT a PlaceableObject
-	for _, m in ipairs(ancestorModels) do
-		if not CollectionService:HasTag(m, "PlaceableObject") then
-			return m
+	local function pickSmallest(list: {Model}): Model?
+		local best, bestMag = nil, math.huge
+		for _, m in ipairs(list) do
+			local mag = getModelExtentsMagnitude(m)
+			if mag < bestMag then
+				best = m
+				bestMag = mag
+			end
 		end
+		return best
 	end
 
-	-- Fallback to the nearest ancestor
-	return ancestorModels[1] or weightValue.Parent
+	return pickSmallest(candidatesWhitelist)
+		or pickSmallest(candidatesGrowable)
+		or pickSmallest(candidatesSafe)
+		or ancestorModels[1]
+		or weightValue.Parent
 end
 
 local function getDeleteRemote(): RemoteEvent?
@@ -146,10 +187,7 @@ local function tryDeleteFruit(weightValue: NumberValue, removeItemRemote: Remote
 	-- Never delete placeable objects (e.g., entire trees) from this tool
 	if target:IsA("Model") then
 		if CollectionService:HasTag(target, "PlaceableObject") then return end
-		local lname = string.lower(target.Name or "")
-		if lname:find("tree") or lname:find("sapling") or lname:find("plant") or lname:find("bush") then
-			return
-		end
+		if isProbablyTreeOrStructure(target) then return end
 	end
 	-- Prefer Remove_Item for non-placeable items (fruit); fallback to DeleteObject
 	if removeItemRemote then
