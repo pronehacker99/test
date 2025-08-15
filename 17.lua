@@ -2587,7 +2587,7 @@ local function fruitESP_determineFruitType(weightValue)
 end
 
 local function fruitESP_isInMyFarm(inst)
-    if not Options.FruitESPOnlyMyFarm.Value then return true end
+    if not Toggles.FruitESPOnlyMyFarm.Value then return true end
     if not fruitESP_State.myFarm or not fruitESP_State.myFarm.Parent then return true end
     return inst:IsDescendantOf(fruitESP_State.myFarm)
 end
