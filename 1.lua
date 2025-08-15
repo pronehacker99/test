@@ -811,105 +811,6 @@ SprinklerGroupBox:AddButton({
     Tooltip = 'Equips a shovel and deletes all sprinklers in the workspace.'
 })
 
--- =================================================================
--- AUTO PLACE EGGS (Added by Gemini)
--- =================================================================
-local AutoPlaceEggsGroupBox = MiscTab:AddLeftGroupbox('Auto Place Eggs', 'circle')
-AutoPlaceEggsGroupBox:AddDivider()
-
--- Get available eggs from ReplicatedStorage
-local EggModels = game:GetService("ReplicatedStorage").Assets.Models.EggModels
-local EggList = {}
-for _, egg in ipairs(EggModels:GetChildren()) do
-    table.insert(EggList, egg.Name)
-end
-
-AutoPlaceEggsGroupBox:AddDropdown('EggSelection', {
-    Values = EggList,
-    Default = EggList[1] or "Common Egg",
-    Multi = false,
-    Text = 'Select Egg to Place',
-    Tooltip = 'Choose which egg to automatically place.'
-})
-
-AutoPlaceEggsGroupBox:AddInput('EggPlaceX', {
-    Default = '74',
-    Text = 'X Position',
-    Tooltip = 'X coordinate for egg placement.'
-})
-
-AutoPlaceEggsGroupBox:AddInput('EggPlaceY', {
-    Default = '0',
-    Text = 'Y Position',
-    Tooltip = 'Y coordinate for egg placement.'
-})
-
-AutoPlaceEggsGroupBox:AddInput('EggPlaceZ', {
-    Default = '-98',
-    Text = 'Z Position',
-    Tooltip = 'Z coordinate for egg placement.'
-})
-
-AutoPlaceEggsGroupBox:AddToggle('EnableAutoPlaceEggs', {
-    Text = 'Enable Auto Place Eggs',
-    Default = false,
-    Tooltip = 'Automatically equips and places the selected egg at the specified position.'
-})
-
-local autoPlaceEggsActive = false
-
-Toggles.EnableAutoPlaceEggs:OnChanged(function(value)
-    if value then
-        if autoPlaceEggsActive then return end
-        autoPlaceEggsActive = true
-        Library:Notify('Auto Place Eggs Enabled!')
-        
-        task.spawn(function()
-            while Toggles.EnableAutoPlaceEggs.Value do
-                local selectedEgg = Options.EggSelection.Value
-                local xPos = tonumber(Options.EggPlaceX.Value) or 74
-                local yPos = tonumber(Options.EggPlaceY.Value) or 0
-                local zPos = tonumber(Options.EggPlaceZ.Value) or -98
-                
-                if selectedEgg then
-                    -- First, equip the selected egg
-                    if equipItem(selectedEgg) then
-                        task.wait(0.5) -- Wait for equip animation
-                        
-                        -- Place the egg using the remote
-                        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-                        local PetEggService = ReplicatedStorage.GameEvents.PetEggService
-                        
-                        local success, err = pcall(function()
-                            PetEggService:FireServer(
-                                "CreateEgg",
-                                Vector3.new(xPos, yPos, zPos)
-                            )
-                        end)
-                        
-                        if success then
-                            print("SCRIPT: Successfully placed " .. selectedEgg .. " at (" .. xPos .. ", " .. yPos .. ", " .. zPos .. ")")
-                        else
-                            warn("SCRIPT: Failed to place egg: " .. tostring(err))
-                        end
-                        
-                        task.wait(0.1) -- Brief delay before next placement
-                    else
-                        Library:Notify("Could not equip " .. selectedEgg .. ". Make sure you have it in your backpack!", 3)
-                        task.wait(2) -- Wait longer if equip failed
-                    end
-                end
-                
-                task.wait(0.5) -- Main loop delay
-            end
-            autoPlaceEggsActive = false
-        end)
-    else
-        Library:Notify('Auto Place Eggs Disabled!')
-        -- Unequip any equipped tool when disabling
-        unequipItem()
-    end
-end)
 
 -- Player Mods groupbox
 local MainGroupBox = MainTab:AddLeftGroupbox('Player Mods', 'person-standing')
@@ -3018,3 +2919,21 @@ task.spawn(function()
     task.wait(1) -- Give some time for the Teleport_UI to load after the game starts
     pcall(modifyTeleportUI)
 end)
+
+-- =================================================================
+-- AUTO PLACE EGGS (UI only)
+-- =================================================================
+local AutoPlaceEggsGroupBox = MiscTab:AddLeftGroupbox('Auto Place Eggs', 'egg')
+AutoPlaceEggsGroupBox:AddDivider()
+
+AutoPlaceEggsGroupBox:AddToggle('EnableAutoPlaceEggs', {
+	Text = 'Auto Place Eggs',
+	Default = false,
+	Tooltip = 'Toggle auto placing of the selected egg.'
+})
+
+AutoPlaceEggsGroupBox:AddDropdown('AutoPlaceEggSelection', {
+	Values = {},
+	Default = nil,
+	Tooltip = 'Select which egg to place.'
+})
