@@ -2934,6 +2934,7 @@ task.spawn(function()
     task.wait(2) -- Wait a bit for the UI to load
     RefreshPetUUIDs()
     RefreshBackpackSeeds() -- Refresh backpack seeds on startup
+    RefreshPlayerEggs() -- Refresh player eggs on startup
     RefreshFriendsList() -- Refresh friends list on startup
     RefreshPlayerListForSender()
     
