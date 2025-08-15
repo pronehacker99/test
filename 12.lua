@@ -20,6 +20,9 @@ local LABEL_OFFSET_Y = 2 -- studs above the fruit's top
 -- State
 local weightValueToGui: {[Instance]: BillboardGui} = {}
 local modelToGui: {[Instance]: BillboardGui} = {}
+local weightToType: {[Instance]: string} = {}
+local knownTypes: {[string]: boolean} = {}
+local selectedType = "All"
 
 local function formatKg(weightValue: number): string
 	if typeof(weightValue) ~= "number" then return "" end
@@ -85,6 +88,31 @@ local function createBillboard(adornee: BasePart): BillboardGui
 	return gui
 end
 
+local function normalizeFruitName(s: string): string
+	if typeof(s) ~= "string" then return "Unknown" end
+	-- Remove trailing digits and underscores, compress spaces
+	local out = s
+	out = out:gsub("_%d+$", "")
+	out = out:gsub("%d+$", "")
+	out = out:gsub("_", " ")
+	out = out:gsub("%s+", " ")
+	out = out:gsub("%.$", "")
+	return (out:match("^%s*(.-)%s*$") or out)
+end
+
+local function determineFruitType(weightValue: NumberValue): string
+	local m = weightValue:FindFirstAncestorOfClass("Model")
+	while m and m.Parent and m.Parent:IsA("Model") do
+		m = m.Parent
+	end
+	local name = m and m.Name or (weightValue.Parent and weightValue.Parent.Name) or "Unknown"
+	return normalizeFruitName(name)
+end
+
+local function shouldShow(typeName: string): boolean
+	return selectedType == "All" or typeName == selectedType
+end
+
 local function attachEspToWeight(weightValue: NumberValue)
 	-- Avoid duplicates
 	if weightValueToGui[weightValue] then return end
@@ -104,12 +132,18 @@ local function attachEspToWeight(weightValue: NumberValue)
 	local ancModel = adornee:FindFirstAncestorOfClass("Model")
 	modelToGui[ancModel or adornee] = gui
 
+	-- Classify fruit and record known types
+	local fruitType = determineFruitType(weightValue)
+	weightToType[weightValue] = fruitType
+	knownTypes[fruitType] = true
+
 	local function update()
 		local text = formatKg(weightValue.Value)
 		local label = gui:FindFirstChild("Frame") and gui.Frame:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
 			label.Text = text
 		end
+		gui.Enabled = shouldShow(fruitType)
 	end
 	update()
 	weightValue:GetPropertyChangedSignal("Value"):Connect(update)
@@ -146,8 +180,106 @@ local function listenForNewWeights()
 	end)
 end
 
+-- UI: Simple dropdown to choose fruit type to ESP
+local function buildUI()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "FruitESP_UI"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 240, 0, 120)
+	frame.Position = UDim2.new(0, 12, 0, 12)
+	frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	frame.BackgroundTransparency = 0.2
+	frame.BorderSizePixel = 0
+	frame.Parent = gui
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Text = "Fruit ESP"
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 16
+	title.TextColor3 = Color3.new(1,1,1)
+	title.Size = UDim2.new(1, -10, 0, 22)
+	title.Position = UDim2.new(0, 10, 0, 8)
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = frame
+
+	local dropdown = Instance.new("TextButton")
+	dropdown.Size = UDim2.new(1, -20, 0, 28)
+	dropdown.Position = UDim2.new(0, 10, 0, 44)
+	dropdown.BackgroundColor3 = Color3.fromRGB(32,32,32)
+	dropdown.BorderSizePixel = 0
+	dropdown.Text = selectedType
+	dropdown.Font = Enum.Font.Gotham
+	dropdown.TextSize = 14
+	dropdown.TextColor3 = Color3.new(1,1,1)
+	dropdown.TextXAlignment = Enum.TextXAlignment.Left
+	dropdown.Parent = frame
+
+	local list = Instance.new("ScrollingFrame")
+	list.Size = UDim2.new(1, -20, 0, 60)
+	list.Position = UDim2.new(0, 10, 0, 76)
+	list.BackgroundColor3 = Color3.fromRGB(24,24,24)
+	list.BorderSizePixel = 0
+	list.Visible = false
+	list.CanvasSize = UDim2.new(0,0,0,0)
+	list.ScrollBarThickness = 4
+	list.Parent = frame
+
+	local uiList = Instance.new("UIListLayout")
+	uiList.SortOrder = Enum.SortOrder.LayoutOrder
+	uiList.Parent = list
+
+	local function applyFilter()
+		for w, g in pairs(weightValueToGui) do
+			local t = weightToType[w]
+			if g then g.Enabled = shouldShow(t) end
+		end
+	end
+
+	local function rebuildOptions()
+		for _, child in ipairs(list:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		local options = {"All"}
+		for t,_ in pairs(knownTypes) do table.insert(options, t) end
+		table.sort(options)
+		for _, name in ipairs(options) do
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, -8, 0, 22)
+			btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+			btn.BorderSizePixel = 0
+			btn.Text = name
+			btn.Font = Enum.Font.Gotham
+			btn.TextSize = 13
+			btn.TextColor3 = Color3.new(1,1,1)
+			btn.Parent = list
+			btn.MouseButton1Click:Connect(function()
+				selectedType = name
+				dropdown.Text = selectedType
+				list.Visible = false
+				applyFilter()
+			end)
+		end
+		list.CanvasSize = UDim2.new(0,0,0,uiList.AbsoluteContentSize.Y + 6)
+	end
+
+	dropdown.MouseButton1Click:Connect(function()
+		list.Visible = not list.Visible
+		if list.Visible then rebuildOptions() end
+	end)
+
+	-- initial populate after scan
+	task.defer(rebuildOptions)
+	return gui
+end
+
 -- Kickoff
 scanInitial()
 listenForNewWeights()
+pcall(buildUI)
 
 
