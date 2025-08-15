@@ -216,13 +216,15 @@ local function makeUI()
 	end
 
 	local function toNiceEggNames(name)
+		if typeof(name) ~= "string" then return {} end
 		local withSpaces = name:gsub("(%l)(%u)", "%1 %2")
 		if not withSpaces:lower():find("egg") then
 			withSpaces = withSpaces .. " Egg"
 		end
-		return {name, withSpaces, withSpaces:gsub("  ", " ")}
+		local collapsed = select(1, withSpaces:gsub("%s%s+", " ")) or withSpaces
+		return {name, withSpaces, collapsed}
 	end
-
+	
 	local function equipEggFuzzy(target)
 		local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 		local hum = char:FindFirstChildOfClass("Humanoid")
@@ -234,9 +236,10 @@ local function makeUI()
 					local eggNameAttr = tool:GetAttribute("EggName") or tool:GetAttribute("ItemName")
 					local toolName = eggNameAttr or tool.Name
 					if typeof(toolName) == "string" then
-						local t = toolName:lower()
+						local t = string.lower(toolName)
 						for _, variant in ipairs(toNiceEggNames(target)) do
-							local v = variant:lower()
+							if typeof(variant) ~= "string" then continue end
+							local v = string.lower(variant)
 							if string.find(t, v) or string.find(v, t) then
 								table.insert(candidates, tool)
 								break
