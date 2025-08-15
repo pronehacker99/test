@@ -781,7 +781,7 @@ end)
 -- =================================================================
 -- AUTO PLACE EGG BOX (Added by Cline)
 -- =================================================================
-local AutoPlaceEggGroupBox = MiscTab:AddLeftGroupbox('Auto Place Egg Box', 'package-variant')
+local AutoPlaceEggGroupBox = MiscTab:AddRightGroupbox('Auto Place Egg', 'egg')
 AutoPlaceEggGroupBox:AddDivider()
 
 -- Dropdown for selecting the egg
@@ -792,16 +792,15 @@ AutoPlaceEggGroupBox:AddDropdown('AutoPlaceEggSelection', {
     Text = 'Select Egg to Place',
     Tooltip = 'Select the egg to automatically place on your farm.',
     Searchable = true,
-    MenuOpened = function()
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local eggFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Models"):WaitForChild("EggModels")
-        local eggNames = {}
-        for _, m in ipairs(eggFolder:GetChildren()) do
-            table.insert(eggNames, m.Name)
-        end
-        Options.AutoPlaceEggSelection:SetValues(eggNames)
-        Library:Notify("Refreshed egg list.", 1)
+})
+
+-- Refresh button
+AutoPlaceEggGroupBox:AddButton({
+    Text = 'Refresh Egg List',
+    Func = function()
+        RefreshAutoPlaceEggList()
     end,
+    Tooltip = 'Updates the list of available eggs.'
 })
 
 -- Input for the delay
@@ -3032,9 +3031,22 @@ Library:OnUnload(function()
     Library.Unloaded = true
 end)
 
+-- Function to refresh the egg list for the auto placer
+function RefreshAutoPlaceEggList()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local eggFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Models"):WaitForChild("EggModels")
+    local eggNames = {}
+    for _, m in ipairs(eggFolder:GetChildren()) do
+        table.insert(eggNames, m.Name)
+    end
+    Options.AutoPlaceEggSelection:SetValues(eggNames)
+    Library:Notify("Refreshed egg list for auto placement.", 1)
+end
+
 -- Auto-refresh pet UUIDs when script starts
 task.spawn(function()
     task.wait(2) -- Wait a bit for the UI to load
+    RefreshAutoPlaceEggList()
     RefreshPetUUIDs()
     RefreshBackpackSeeds() -- Refresh backpack seeds on startup
     RefreshFriendsList() -- Refresh friends list on startup
