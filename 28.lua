@@ -81,6 +81,33 @@ local FRUIT_NAME_WHITELIST: {[string]: boolean} = {
 	["Artichoke"] = true, ["Spring Onion"] = true,
 }
 
+local function findFirstBasePart(container: Instance): BasePart?
+	if container == nil then return nil end
+	if container:IsA("BasePart") then return container end
+	if container:IsA("Model") then
+		local model = container :: Model
+		if model.PrimaryPart then return model.PrimaryPart end
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BasePart") then return d end
+		end
+	end
+	for _, d in ipairs(container:GetDescendants()) do
+		if d:IsA("BasePart") then return d end
+	end
+	return nil
+end
+
+local function getModelPivotPosition(m: Model): Vector3?
+	local ok, cf = pcall(function()
+		return m:GetPivot()
+	end)
+	if ok and typeof(cf) == "CFrame" then
+		return cf.Position
+	end
+	local bp = findFirstBasePart(m)
+	return bp and bp.Position or nil
+end
+
 local function getModelExtentsMagnitude(m: Model): number
 	local ok, size = pcall(function()
 		return m:GetExtentsSize()
@@ -119,6 +146,11 @@ local function getFruitModelFromWeight(weightValue: NumberValue): Instance
 	local candidatesWhitelist: {Model} = {}
 	local candidatesSafe: {Model} = {}
 
+	-- Reference position near this weight to choose closest sub-model (fruit)
+	local weightPos: Vector3? = nil
+	local weightPart = findFirstBasePart(weightValue.Parent)
+	if weightPart then weightPos = weightPart.Position end
+
 	for _, m in ipairs(ancestorModels) do
 		local norm = normalizeName(m.Name or "")
 		local isGrowable = CollectionService:HasTag(m, "Growable")
@@ -147,9 +179,26 @@ local function getFruitModelFromWeight(weightValue: NumberValue): Instance
 		return best
 	end
 
-	return pickSmallest(candidatesWhitelist)
-		or pickSmallest(candidatesGrowable)
-		or pickSmallest(candidatesSafe)
+	local function pickClosestSmall(list: {Model}): Model?
+		if not weightPos then return pickSmallest(list) end
+		local best, bestScore = nil, math.huge
+		for _, m in ipairs(list) do
+			local pos = getModelPivotPosition(m) or weightPos
+			local sizeMag = getModelExtentsMagnitude(m)
+			local dist = (pos - weightPos).Magnitude
+			-- Weighted score favors near and small
+			local score = dist + sizeMag * 0.25
+			if score < bestScore then
+				best = m
+				bestScore = score
+			end
+		end
+		return best
+	end
+
+	return pickClosestSmall(candidatesWhitelist)
+		or pickClosestSmall(candidatesGrowable)
+		or pickClosestSmall(candidatesSafe)
 		or ancestorModels[1]
 		or weightValue.Parent
 end
