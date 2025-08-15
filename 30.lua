@@ -277,6 +277,8 @@ local function tryDeleteFruit(weightValue: NumberValue, removeItemRemote: Remote
 	if target:IsA("Model") then
 		if CollectionService:HasTag(target, "PlaceableObject") then return end
 		if isProbablyTreeOrStructure(target) then return end
+		-- additional sanity: require this weight to be under a Fruits folder
+		if not findAncestorFolderByName(weightValue, "Fruits") then return end
 	end
 	-- Prefer Remove_Item for non-placeable items (fruit); fallback to DeleteObject
 	if removeItemRemote then
@@ -299,7 +301,16 @@ local function normalizeFruitName(s: string): string
 end
 
 local function deduceFruitType(weightValue: NumberValue): string
-	-- Use nearest model name to avoid classifying as tree or world model
+	-- Prefer the fruit model name if under a Fruits folder
+	local fruitsFolder = findAncestorFolderByName(weightValue, "Fruits")
+	if fruitsFolder then
+		for _, child in ipairs(fruitsFolder:GetChildren()) do
+			if child:IsA("Model") and weightValue:IsDescendantOf(child) then
+				return normalizeFruitName(child.Name)
+			end
+		end
+	end
+	-- Fallback to nearest model name
 	local m = weightValue:FindFirstAncestorOfClass("Model")
 	local name = m and m.Name or (weightValue.Parent and weightValue.Parent.Name) or "Unknown"
 	return normalizeFruitName(name)
@@ -308,7 +319,7 @@ end
 local function collectKnownTypes()
 	for _, inst in ipairs(Workspace:GetDescendants()) do
 		if inst:IsA("NumberValue") and inst.Name == "Weight" then
-			if isInMyFarm(inst) then
+			if isInMyFarm(inst) and findAncestorFolderByName(inst, "Fruits") then
 				local t = deduceFruitType(inst)
 				knownTypes[t] = true
 			end
@@ -341,7 +352,7 @@ local function scanAndDelete()
 		-- Iterate all weight values (fruit) and delete
 		for _, inst in ipairs(Workspace:GetDescendants()) do
 			if not ENABLED then break end
-			if inst:IsA("NumberValue") and inst.Name == "Weight" then
+			if inst:IsA("NumberValue") and inst.Name == "Weight" and findAncestorFolderByName(inst, "Fruits") then
 				-- filter by farm first
 				if isInMyFarm(inst) then
 					local t = deduceFruitType(inst)
