@@ -113,6 +113,15 @@ local function deduceFruitType(weightValue: NumberValue): string
 	return normalizeFruitName(name)
 end
 
+local function collectKnownTypes()
+	for _, inst in ipairs(Workspace:GetDescendants()) do
+		if inst:IsA("NumberValue") and inst.Name == "Weight" then
+			local t = deduceFruitType(inst)
+			knownTypes[t] = true
+		end
+	end
+end
+
 local function scanAndDelete()
 	local deleteRemote = getDeleteRemote()
 	if not deleteRemote then
@@ -213,6 +222,7 @@ local function buildUI()
 	uiList.Parent = list
 
 	local function rebuildOptions()
+		collectKnownTypes()
 		for _, c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 		local options = {"All"}
 		for t,_ in pairs(knownTypes) do if t ~= "All" then table.insert(options, t) end end
@@ -316,5 +326,13 @@ local function buildUI()
 end
 
 pcall(buildUI)
+
+-- Keep options fresh when new fruits spawn
+Workspace.DescendantAdded:Connect(function(inst)
+	if inst:IsA("NumberValue") and inst.Name == "Weight" then
+		local t = deduceFruitType(inst)
+		knownTypes[t] = true
+	end
+end)
 
 
