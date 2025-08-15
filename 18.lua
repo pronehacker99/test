@@ -2461,275 +2461,209 @@ Toggles.AutoPlant:OnChanged(function(value)
     end
 end)
 
+
 -- =================================================================
--- FRUIT ESP (Added by Cline)
+-- FRUIT ESP (integrated from fruitsesp.lua)
 -- =================================================================
 local FruitESPGroupBox = PlantsTab:AddRightGroupbox('Fruit ESP', 'eye')
 FruitESPGroupBox:AddDivider()
 
-FruitESPGroupBox:AddToggle('EnableFruitESP', {
-    Text = 'Enable Fruit ESP',
-    Default = false,
-    Tooltip = 'Displays the weight of fruits in the world.'
-})
-
--- This dropdown will be populated dynamically
-FruitESPGroupBox:AddDropdown('FruitESPType', {
-    Values = {"All"},
-    Default = "All",
+FruitESPGroupBox:AddDropdown('FruitEspType', {
+    Values = { 'All' },
+    Default = 'All',
     Multi = false,
-    Text = 'Filter Fruit Type',
-    Tooltip = 'Select which fruit type to display. Refreshes when opened.',
-    MenuOpened = function()
-        -- This will be connected to a refresh function later
-    end
+    Text = 'Fruit Type',
+    Tooltip = 'Select which fruit to ESP (by type).'
 })
 
-FruitESPGroupBox:AddToggle('FruitESPOnlyMyFarm', {
+FruitESPGroupBox:AddToggle('FruitEspOnlyMyFarm', {
     Text = 'Only My Farm',
     Default = true,
-    Tooltip = 'Only show fruits on your own farm.'
+    Tooltip = 'When enabled, ESP only shows fruits within your farm.'
 })
 
--- Logic for Fruit ESP
-local fruitESP_State = {
-    active = false,
-    weightValueToGui = {},
-    modelToGui = {},
-    weightToType = {},
-    knownTypes = {},
-    myFarm = nil,
-    scanRoots = {
-        game:GetService("Workspace"),
-        game:GetService("Workspace"):FindFirstChild("Farm") or game:GetService("Workspace"),
-    },
-    MAX_LABEL_DISTANCE = 1000,
-    LABEL_OFFSET_Y = 2,
-    descendantAddedConnection = nil
-}
+FruitESPGroupBox:AddToggle('FruitEspEnable', {
+    Text = 'Enable Fruit ESP',
+    Default = false,
+    Tooltip = 'Show fruit weights above fruits in the world.'
+})
 
-local function fruitESP_formatKg(weightValue)
-    if typeof(weightValue) ~= "number" then return "" end
-    return string.format("%.2f kg", weightValue)
-end
+do
+    local Players = game:GetService('Players')
+    local Workspace = game:GetService('Workspace')
+    local ReplicatedStorage = game:GetService('ReplicatedStorage')
+    local GetFarmAsync = require(ReplicatedStorage:WaitForChild('Modules'):WaitForChild('GetFarmAsync'))
 
-local function fruitESP_findFirstBasePart(container)
-    if not container then return nil end
-    if container:IsA("BasePart") then return container end
-    if container:IsA("Model") then
-        if container.PrimaryPart then return container.PrimaryPart end
-        for _, d in ipairs(container:GetDescendants()) do
-            if d:IsA("BasePart") then return d end
+    local weightValueToGui = {}
+    local weightToType = {}
+    local knownTypes = { All = true }
+    local myFarm = nil
+    local connections = {}
+
+    local function refreshMyFarm()
+        pcall(function()
+            myFarm = GetFarmAsync(Players.LocalPlayer)
+        end)
+    end
+
+    local function isInMyFarm(inst)
+        if not (Toggles.FruitEspOnlyMyFarm and Toggles.FruitEspOnlyMyFarm.Value) then return true end
+        if not myFarm or not myFarm.Parent then return true end
+        return inst:IsDescendantOf(myFarm)
+    end
+
+    local function formatKg(n)
+        if typeof(n) ~= 'number' then return '' end
+        return string.format('%.2f kg', n)
+    end
+
+    local function createBillboard(adornee)
+        local gui = Instance.new('BillboardGui')
+        gui.Name = 'FruitESP'
+        gui.Size = UDim2.new(0, 140, 0, 36)
+        gui.AlwaysOnTop = true
+        gui.MaxDistance = 1000
+        gui.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
+        gui.Adornee = adornee
+        gui.Parent = adornee
+        local bg = Instance.new('Frame')
+        bg.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        bg.BackgroundTransparency = 0.25
+        bg.BorderSizePixel = 0
+        bg.Size = UDim2.new(1,0,1,0)
+        bg.Parent = gui
+        local label = Instance.new('TextLabel')
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1,-10,1,0)
+        label.Position = UDim2.new(0,5,0,0)
+        label.TextScaled = true
+        label.Font = Enum.Font.GothamBold
+        label.TextColor3 = Color3.new(1,1,1)
+        label.Text = ''
+        label.Name = 'Label'
+        label.Parent = bg
+        return gui
+    end
+
+    local function findFirstBasePart(inst)
+        if inst:IsA('BasePart') then return inst end
+        local m = inst:FindFirstAncestorOfClass('Model') or inst
+        if m and m:IsA('Model') then
+            if m.PrimaryPart then return m.PrimaryPart end
+            for _, d in ipairs(m:GetDescendants()) do if d:IsA('BasePart') then return d end end
         end
-    end
-    for _, d in ipairs(container:GetDescendants()) do
-        if d:IsA("BasePart") then return d end
-    end
-    return nil
-end
-
-local function fruitESP_createBillboard(adornee)
-    local gui = Instance.new("BillboardGui")
-    gui.Name = "FruitESP"
-    gui.Size = UDim2.new(0, 140, 0, 36)
-    gui.AlwaysOnTop = true
-    gui.MaxDistance = fruitESP_State.MAX_LABEL_DISTANCE
-    gui.StudsOffsetWorldSpace = Vector3.new(0, fruitESP_State.LABEL_OFFSET_Y, 0)
-    gui.Adornee = adornee
-    gui.Parent = adornee
-
-    local bg = Instance.new("Frame")
-    bg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    bg.BackgroundTransparency = 0.25
-    bg.BorderSizePixel = 0
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.Parent = gui
-
-    local uiCorner = Instance.new("UICorner")
-    uiCorner.CornerRadius = UDim.new(0, 6)
-    uiCorner.Parent = bg
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1
-    stroke.Color = Color3.fromRGB(0, 0, 0)
-    stroke.Transparency = 0.3
-    stroke.Parent = bg
-
-    local label = Instance.new("TextLabel")
-    label.Name = "Label"
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -10, 1, 0)
-    label.Position = UDim2.new(0, 5, 0, 0)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBold
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextStrokeTransparency = 0.5
-    label.Text = ""
-    label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Parent = bg
-
-    return gui
-end
-
-local function fruitESP_normalizeFruitName(s)
-    if typeof(s) ~= "string" then return "Unknown" end
-    local out = s:gsub("_%d+$", ""):gsub("%d+$", ""):gsub("_", " "):gsub("%s+", " "):gsub("%.$", "")
-    return (out:match("^%s*(.-)%s*$") or out)
-end
-
-local function fruitESP_determineFruitType(weightValue)
-    local m = weightValue:FindFirstAncestorOfClass("Model")
-    if m then
-        while m.Parent and m.Parent:IsA("Model") do m = m.Parent end
-        return fruitESP_normalizeFruitName(m.Name)
-    end
-    return (weightValue.Parent and fruitESP_normalizeFruitName(weightValue.Parent.Name)) or "Unknown"
-end
-
-local function fruitESP_isInMyFarm(inst)
-    if not Toggles.FruitESPOnlyMyFarm.Value then return true end
-    if not fruitESP_State.myFarm or not fruitESP_State.myFarm.Parent then return true end
-    return inst:IsDescendantOf(fruitESP_State.myFarm)
-end
-
-local function fruitESP_shouldShow(typeName)
-    local selectedType = Options.FruitESPType.Value
-    return selectedType == "All" or typeName == selectedType
-end
-
-local function fruitESP_applyFilter()
-    for w, g in pairs(fruitESP_State.weightValueToGui) do
-        local t = fruitESP_State.weightToType[w]
-        if g and g.Parent then g.Enabled = fruitESP_shouldShow(t) end
-    end
-end
-
-local function fruitESP_attachEspToWeight(weightValue)
-    if fruitESP_State.weightValueToGui[weightValue] then return end
-
-    local container = weightValue.Parent
-    local adornee = fruitESP_findFirstBasePart(container) or fruitESP_findFirstBasePart(weightValue:FindFirstAncestorOfClass("Model"))
-    if not adornee then return end
-
-    local gui = fruitESP_createBillboard(adornee)
-    fruitESP_State.weightValueToGui[weightValue] = gui
-    
-    local fruitType = fruitESP_determineFruitType(weightValue)
-    fruitESP_State.weightToType[weightValue] = fruitType
-    if not fruitESP_State.knownTypes[fruitType] then
-        fruitESP_State.knownTypes[fruitType] = true
-        -- Refresh dropdown options when a new type is found
-        local options = {"All"}
-        for t, _ in pairs(fruitESP_State.knownTypes) do table.insert(options, t) end
-        table.sort(options)
-        Options.FruitESPType:SetValues(options)
+        for _, d in ipairs(inst:GetDescendants()) do if d:IsA('BasePart') then return d end end
+        return nil
     end
 
-    local function update()
-        local label = gui:FindFirstChild("Frame") and gui.Frame:FindFirstChild("Label")
-        if label and label:IsA("TextLabel") then
-            label.Text = fruitESP_formatKg(weightValue.Value)
+    local function normalizeFruitName(s)
+        if typeof(s) ~= 'string' then return 'Unknown' end
+        s = s:gsub('_%d+$',''):gsub('%d+$',''):gsub('_',' '):gsub('%s+',' ')
+        return (s:match('^%s*(.-)%s*$') or s)
+    end
+
+    local function deduceType(nv)
+        local m = nv:FindFirstAncestorOfClass('Model')
+        while m and m.Parent and m.Parent:IsA('Model') do m = m.Parent end
+        local name = m and m.Name or (nv.Parent and nv.Parent.Name) or 'Unknown'
+        return normalizeFruitName(name)
+    end
+
+    local function shouldShowForType(typeName)
+        local wanted = Options.FruitEspType and Options.FruitEspType.Value or 'All'
+        return wanted == 'All' or typeName == wanted
+    end
+
+    local function attach(nv)
+        if weightValueToGui[nv] then return end
+        if not isInMyFarm(nv) then return end
+        local part = findFirstBasePart(nv.Parent or nv)
+        if not part then return end
+        local gui = createBillboard(part)
+        weightValueToGui[nv] = gui
+        local fruitType = deduceType(nv)
+        weightToType[nv] = fruitType
+        knownTypes[fruitType] = true
+
+        local function update()
+            local label = gui:FindFirstChild('Frame') and gui.Frame:FindFirstChild('Label')
+            if label then label.Text = formatKg(nv.Value) end
+            gui.Enabled = shouldShowForType(fruitType)
         end
-        gui.Enabled = fruitESP_shouldShow(fruitType)
+        update()
+        table.insert(connections, nv:GetPropertyChangedSignal('Value'):Connect(update))
+        table.insert(connections, nv.AncestryChanged:Connect(function()
+            if not nv:IsDescendantOf(Workspace) then
+                local g = weightValueToGui[nv]
+                if g then g:Destroy() end
+                weightValueToGui[nv] = nil
+                weightToType[nv] = nil
+            end
+        end))
     end
-    update()
-    
-    weightValue:GetPropertyChangedSignal("Value"):Connect(update)
-    weightValue.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            local g = fruitESP_State.weightValueToGui[weightValue]
-            if g then
-                fruitESP_State.weightValueToGui[weightValue] = nil
-                g:Destroy()
+
+    local scanning = false
+    local function scanAll()
+        if scanning then return end
+        scanning = true
+        refreshMyFarm()
+        for _, nv in ipairs(Workspace:GetDescendants()) do
+            if nv:IsA('NumberValue') and nv.Name == 'Weight' then
+                attach(nv)
             end
         end
-    end)
-end
+        scanning = false
+        -- update dropdown values
+        local values = { 'All' }
+        for t,_ in pairs(knownTypes) do if t ~= 'All' then table.insert(values, t) end end
+        table.sort(values)
+        if Options.FruitEspType then Options.FruitEspType:SetValues(values) end
+    end
 
-local function fruitESP_scanInitial()
-    local visited = {}
-    for _, root in ipairs(fruitESP_State.scanRoots) do
-        if root and root:IsDescendantOf(game:GetService("Workspace")) and not visited[root] then
-            visited[root] = true
-            for _, nv in ipairs(root:GetDescendants()) do
-                if nv:IsA("NumberValue") and nv.Name == "Weight" and fruitESP_isInMyFarm(nv) then
-                    fruitESP_attachEspToWeight(nv)
-                end
+    local function clearAll()
+        for nv, gui in pairs(weightValueToGui) do if gui then gui:Destroy() end end
+        weightValueToGui = {}
+        weightToType = {}
+        knownTypes = { All = true }
+        for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+        connections = {}
+    end
+
+    local worldConn
+    local function start()
+        clearAll()
+        scanAll()
+        if worldConn then worldConn:Disconnect() end
+        worldConn = Workspace.DescendantAdded:Connect(function(inst)
+            if Toggles.FruitEspEnable and Toggles.FruitEspEnable.Value then
+                if inst:IsA('NumberValue') and inst.Name == 'Weight' then attach(inst) end
             end
-        end
+        end)
     end
-end
 
-local function fruitESP_listenForNewWeights()
-    if fruitESP_State.descendantAddedConnection then fruitESP_State.descendantAddedConnection:Disconnect() end
-    fruitESP_State.descendantAddedConnection = game:GetService("Workspace").DescendantAdded:Connect(function(inst)
-        if inst:IsA("NumberValue") and inst.Name == "Weight" and fruitESP_isInMyFarm(inst) then
-            fruitESP_attachEspToWeight(inst)
+    local function stop()
+        if worldConn then worldConn:Disconnect() end
+        worldConn = nil
+        clearAll()
+    end
+
+    -- Hook UI
+    Toggles.FruitEspEnable:OnChanged(function(v)
+        if v then start() else stop() end
+    end)
+
+    Options.FruitEspType:OnChanged(function()
+        for nv, gui in pairs(weightValueToGui) do
+            local t = weightToType[nv]
+            if gui then gui.Enabled = shouldShowForType(t) end
         end
     end)
-end
 
-local function fruitESP_cleanup()
-    for _, g in pairs(fruitESP_State.weightValueToGui) do
-        if g and g.Parent then g:Destroy() end
-    end
-    fruitESP_State.weightValueToGui = {}
-    fruitESP_State.knownTypes = {}
-    fruitESP_State.weightToType = {}
-    if fruitESP_State.descendantAddedConnection then
-        fruitESP_State.descendantAddedConnection:Disconnect()
-        fruitESP_State.descendantAddedConnection = nil
-    end
-    Options.FruitESPType:SetValues({"All"})
-    Options.FruitESPType:SetValue("All")
-end
-
-local function fruitESP_refreshMyFarm()
-    pcall(function()
-        local GetFarmAsync = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("GetFarmAsync"))
-        fruitESP_State.myFarm = GetFarmAsync(LocalPlayer)
+    Toggles.FruitEspOnlyMyFarm:OnChanged(function()
+        if Toggles.FruitEspEnable and Toggles.FruitEspEnable.Value then
+            start()
+        end
     end)
-end
-
-local function fruitESP_start()
-    if fruitESP_State.active then return end
-    fruitESP_State.active = true
-    Library:Notify("Fruit ESP Enabled!", 1)
-    fruitESP_refreshMyFarm()
-    fruitESP_scanInitial()
-    fruitESP_listenForNewWeights()
-end
-
-local function fruitESP_stop()
-    if not fruitESP_State.active then return end
-    fruitESP_State.active = false
-    Library:Notify("Fruit ESP Disabled!", 1)
-    fruitESP_cleanup()
-end
-
--- Connect toggles and dropdowns to functions
-Toggles.EnableFruitESP:OnChanged(function(value)
-    if value then
-        fruitESP_start()
-    else
-        fruitESP_stop()
-    end
-end)
-
-Options.FruitESPType:OnChanged(fruitESP_applyFilter)
-
-Toggles.FruitESPOnlyMyFarm:OnChanged(function(value)
-    if fruitESP_State.active then
-        -- Rescan when this setting changes
-        fruitESP_stop()
-        fruitESP_start()
-    end
-end)
-
--- Connect the refresh function to the dropdown
-Options.FruitESPType.MenuOpened = function()
-    -- The list is populated dynamically as fruits are found
-    Library:Notify("Fruit list updates as new fruits are discovered.", 1)
 end
 
 
