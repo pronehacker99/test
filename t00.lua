@@ -1,158 +1,276 @@
--- Auto Place Pet Egg with Dynamic Plot & Egg Selection GUI
+-- Auto Place Selected Pet Egg (GUI + Auto Plot)
+
+--// Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
-local PetEggService = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("PetEggService")
 
--- Create GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+-- Remotes & models
+local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+local PetEggService = GameEvents:WaitForChild("PetEggService")
+local EggModels = ReplicatedStorage.Assets.Models:WaitForChild("EggModels")
 
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 200, 0, 250)
-Frame.Position = UDim2.new(0, 50, 0, 50)
-Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+--============================ Helpers ============================--
 
-local Title = Instance.new("TextLabel", Frame)
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.Text = "Auto Egg Placer"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+local function escapePattern(s) return (s:gsub("(%W)","%%%1")) end
 
-local EggDropdown = Instance.new("TextButton", Frame)
-EggDropdown.Size = UDim2.new(1, 0, 0, 30)
-EggDropdown.Position = UDim2.new(0, 0, 0, 40)
-EggDropdown.Text = "Select Egg"
-EggDropdown.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-EggDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
+-- Find egg tool by fuzzy match
+local function findToolByBaseName(baseName)
+    local pattern = "^" .. escapePattern(baseName) .. "%s*x?%d*$"
+    local function findIn(container)
+        if not container then return nil end
+        for _, inst in ipairs(container:GetDescendants()) do
+            if inst:IsA("Tool") and (inst.Name == baseName or inst.Name:lower():match(pattern:lower())) then
+                return inst
+            end
+        end
+        return nil
+    end
+    return findIn(LocalPlayer.Character) or findIn(LocalPlayer.Backpack)
+end
 
-local EggListFrame = Instance.new("ScrollingFrame", Frame)
-EggListFrame.Size = UDim2.new(1, 0, 0, 100)
-EggListFrame.Position = UDim2.new(0, 0, 0, 70)
-EggListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-EggListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-EggListFrame.Visible = false
+-- Force equip
+local function ensureEquipped(tool)
+    if not tool then return false end
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local ok = pcall(function() hum:EquipTool(tool) end)
+        if not ok or tool.Parent ~= char then
+            tool.Parent = char
+        end
+    else
+        tool.Parent = char
+    end
+    return tool.Parent == char
+end
 
-local StartButton = Instance.new("TextButton", Frame)
-StartButton.Size = UDim2.new(1, 0, 0, 30)
-StartButton.Position = UDim2.new(0, 0, 0, 180)
-StartButton.Text = "Start Placing"
-StartButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-local StopButton = Instance.new("TextButton", Frame)
-StopButton.Size = UDim2.new(1, 0, 0, 30)
-StopButton.Position = UDim2.new(0, 0, 0, 215)
-StopButton.Text = "Stop"
-StopButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-StopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-
--- Variables
-local selectedEgg = nil
-local autoPlace = false
-
--- Find player's plot
+-- Auto-detect player plot
 local function getMyPlot()
-    for _, plot in ipairs(workspace:GetChildren()) do
-        if plot:FindFirstChild("Owner") and plot.Owner.Value == LocalPlayer then
-            return plot
+    local uid, name = LocalPlayer.UserId, LocalPlayer.Name
+    for _, inst in ipairs(workspace:GetDescendants()) do
+        local owner = inst:FindFirstChild("Owner")
+        if owner then
+            if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then return inst end
+            if owner:IsA("IntValue") and owner.Value == uid then return inst end
+            if owner:IsA("StringValue") and owner.Value == name then return inst end
         end
+        local ownerUserId = inst:FindFirstChild("OwnerUserId")
+        if ownerUserId and ownerUserId:IsA("IntValue") and ownerUserId.Value == uid then return inst end
     end
 end
 
--- Get largest part in plot (assumed ground)
-local function getPlacementBase(plot)
-    local largestPart = nil
-    local largestSize = 0
-    for _, obj in ipairs(plot:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local size = obj.Size.X * obj.Size.Z
-            if size > largestSize then
-                largestSize = size
-                largestPart = obj
+-- Find largest base part
+local function getPlotBasePart(plot)
+    if not plot then return nil end
+    local best, bestArea = nil, -1
+    for _, inst in ipairs(plot:GetDescendants()) do
+        if inst:IsA("BasePart") then
+            local area = inst.Size.X * inst.Size.Z
+            local nameBonus = (inst.Name == "Base") and 1e12 or 0
+            if area + nameBonus > bestArea then
+                best = inst
+                bestArea = area + nameBonus
             end
         end
     end
-    return largestPart
+    return best
 end
 
--- Get random position in part
-local function randomPositionInPart(part)
-    local size = part.Size
-    local pos = part.Position
-    local x = math.random(pos.X - size.X/2, pos.X + size.X/2)
-    local z = math.random(pos.Z - size.Z/2, pos.Z + size.Z/2)
-    return Vector3.new(x, pos.Y, z)
+-- Random position on base part
+local function randomPointOnBase(basePart)
+    local halfX = basePart.Size.X * 0.45
+    local halfZ = basePart.Size.Z * 0.45
+    local lx = (math.random() * 2 - 1) * halfX
+    local lz = (math.random() * 2 - 1) * halfZ
+    local topY = basePart.Size.Y * 0.5 + 0.15
+    return (basePart.CFrame * CFrame.new(lx, topY, lz)).Position
 end
 
--- Equip egg from backpack
-local function equipEgg(eggName)
-    for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-        if tool:IsA("Tool") and tool.Name:match(eggName) then
-            LocalPlayer.Character.Humanoid:EquipTool(tool)
-            break
-        end
+--============================ GUI ============================--
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoEggPlacerUI"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 210)
+frame.Position = UDim2.new(0, 20, 0, 120)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, -12, 0, 26)
+title.Position = UDim2.new(0, 6, 0, 6)
+title.Text = "Auto Place Pet Eggs"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.new(1,1,1)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
+
+local dropdownBtn = Instance.new("TextButton")
+dropdownBtn.Size = UDim2.new(1, -20, 0, 30)
+dropdownBtn.Position = UDim2.new(0, 10, 0, 40)
+dropdownBtn.Text = "Select Egg"
+dropdownBtn.Font = Enum.Font.Gotham
+dropdownBtn.TextSize = 14
+dropdownBtn.TextColor3 = Color3.new(1,1,1)
+dropdownBtn.BackgroundColor3 = Color3.fromRGB(55,55,55)
+dropdownBtn.Parent = frame
+Instance.new("UICorner", dropdownBtn).CornerRadius = UDim.new(0, 8)
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -20, 0, 90)
+scroll.Position = UDim2.new(0, 10, 0, 75)
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.ScrollBarThickness = 6
+scroll.Visible = false
+scroll.BackgroundColor3 = Color3.fromRGB(45,45,45)
+scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 8)
+
+local list = Instance.new("UIListLayout", scroll)
+list.Padding = UDim.new(0, 4)
+list.SortOrder = Enum.SortOrder.LayoutOrder
+
+local selectedEggBaseName = nil
+do
+    local eggs = {}
+    for _, m in ipairs(EggModels:GetChildren()) do
+        table.insert(eggs, m.Name)
     end
-end
-
--- Fill egg list in dropdown
-local function populateEggList()
-    local eggsFolder = ReplicatedStorage:FindFirstChild("Assets"):FindFirstChild("Models"):FindFirstChild("EggModels")
-    if eggsFolder then
-        EggListFrame:ClearAllChildren()
-        local yPos = 0
-        for _, egg in ipairs(eggsFolder:GetChildren()) do
-            local btn = Instance.new("TextButton", EggListFrame)
-            btn.Size = UDim2.new(1, 0, 0, 30)
-            btn.Position = UDim2.new(0, 0, 0, yPos)
-            btn.Text = egg.Name
-            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.MouseButton1Click:Connect(function()
-                selectedEgg = egg.Name
-                EggDropdown.Text = "Egg: " .. egg.Name
-                EggListFrame.Visible = false
-            end)
-            yPos = yPos + 30
-        end
-        EggListFrame.CanvasSize = UDim2.new(0, 0, 0, yPos)
-    end
-end
-
--- Toggle dropdown visibility
-EggDropdown.MouseButton1Click:Connect(function()
-    if EggListFrame.Visible then
-        EggListFrame.Visible = false
-    else
-        populateEggList()
-        EggListFrame.Visible = true
-    end
-end)
-
--- Start placing eggs
-StartButton.MouseButton1Click:Connect(function()
-    if selectedEgg then
-        autoPlace = true
-        task.spawn(function()
-            while autoPlace do
-                equipEgg(selectedEgg)
-                local plot = getMyPlot()
-                if plot then
-                    local base = getPlacementBase(plot)
-                    if base then
-                        local pos = randomPositionInPart(base)
-                        PetEggService:FireServer("CreateEgg", pos)
-                    end
-                end
-                task.wait(1)
-            end
+    table.sort(eggs)
+    for _, name in ipairs(eggs) do
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, -10, 0, 26)
+        b.Text = name
+        b.Font = Enum.Font.Gotham
+        b.TextSize = 14
+        b.TextColor3 = Color3.new(1,1,1)
+        b.BackgroundColor3 = Color3.fromRGB(60,60,60)
+        b.Parent = scroll
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        b.MouseButton1Click:Connect(function()
+            selectedEggBaseName = name
+            dropdownBtn.Text = "Egg: " .. name
+            scroll.Visible = false
         end)
-    else
-        warn("No egg selected!")
     end
+    task.defer(function()
+        local c = 0
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("GuiObject") then c += child.AbsoluteSize.Y + 4 end
+        end
+        scroll.CanvasSize = UDim2.new(0,0,0,math.max(c, 90))
+    end)
+end
+
+dropdownBtn.MouseButton1Click:Connect(function()
+    scroll.Visible = not scroll.Visible
 end)
 
--- Stop placing eggs
-StopButton.MouseButton1Click:Connect(function()
-    autoPlace = false
+local delayBox = Instance.new("TextBox")
+delayBox.Size = UDim2.new(0, 90, 0, 30)
+delayBox.Position = UDim2.new(0, 10, 0, 170)
+delayBox.PlaceholderText = "Delay (s)"
+delayBox.Text = "0.8"
+delayBox.Font = Enum.Font.Gotham
+delayBox.TextSize = 14
+delayBox.TextColor3 = Color3.new(1,1,1)
+delayBox.BackgroundColor3 = Color3.fromRGB(55,55,55)
+delayBox.ClearTextOnFocus = false
+delayBox.Parent = frame
+Instance.new("UICorner", delayBox).CornerRadius = UDim.new(0, 8)
+
+local startBtn = Instance.new("TextButton")
+startBtn.Size = UDim2.new(0, 70, 0, 30)
+startBtn.Position = UDim2.new(0, 110, 0, 170)
+startBtn.Text = "Start"
+startBtn.Font = Enum.Font.Gotham
+startBtn.TextSize = 14
+startBtn.TextColor3 = Color3.new(1,1,1)
+startBtn.BackgroundColor3 = Color3.fromRGB(40,170,95)
+startBtn.Parent = frame
+Instance.new("UICorner", startBtn).CornerRadius = UDim.new(0, 8)
+
+local stopBtn = Instance.new("TextButton")
+stopBtn.Size = UDim2.new(0, 70, 0, 30)
+stopBtn.Position = UDim2.new(0, 190, 0, 170)
+stopBtn.Text = "Stop"
+stopBtn.Font = Enum.Font.Gotham
+stopBtn.TextSize = 14
+stopBtn.TextColor3 = Color3.new(1,1,1)
+stopBtn.BackgroundColor3 = Color3.fromRGB(170,40,40)
+stopBtn.Parent = frame
+Instance.new("UICorner", stopBtn).CornerRadius = UDim.new(0, 8)
+
+local statusLbl = Instance.new("TextLabel")
+statusLbl.BackgroundTransparency = 1
+statusLbl.Size = UDim2.new(1, -20, 0, 20)
+statusLbl.Position = UDim2.new(0, 10, 0, 145)
+statusLbl.Text = "Idle"
+statusLbl.Font = Enum.Font.Gotham
+statusLbl.TextSize = 12
+statusLbl.TextColor3 = Color3.fromRGB(220,220,220)
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.Parent = frame
+
+--============================ Runner ============================--
+
+local running = false
+
+local function placeOnce()
+    if not selectedEggBaseName then
+        statusLbl.Text = "Select an egg first"
+        return
+    end
+    local tool = findToolByBaseName(selectedEggBaseName)
+    if not tool then
+        statusLbl.Text = ("Tool not found: %s"):format(selectedEggBaseName)
+        return
+    end
+    ensureEquipped(tool)
+    local plot = getMyPlot()
+    if not plot then
+        statusLbl.Text = "Plot not found"
+        return
+    end
+    local base = getPlotBasePart(plot)
+    if not base then
+        statusLbl.Text = "Plot base not found"
+        return
+    end
+    local pos = randomPointOnBase(base)
+    local ok, err = pcall(function()
+        PetEggService:FireServer("CreateEgg", pos)
+    end)
+    if not ok then
+        statusLbl.Text = "CreateEgg failed"
+        warn("[AutoEgg] CreateEgg error:", err)
+    else
+        statusLbl.Text = ("Placed at (%.1f, %.1f, %.1f)"):format(pos.X, pos.Y, pos.Z)
+    end
+end
+
+startBtn.MouseButton1Click:Connect(function()
+    if running then return end
+    running = true
+    statusLbl.Text = "Running..."
+    local delayNum = tonumber(delayBox.Text) or 0.8
+    task.spawn(function()
+        while running do
+            placeOnce()
+            task.wait(delayNum)
+        end
+    end)
+end)
+
+stopBtn.MouseButton1Click:Connect(function()
+    running = false
+    statusLbl.Text = "Stopped"
 end)
