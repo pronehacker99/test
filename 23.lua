@@ -59,7 +59,7 @@ local function equipShovel(): boolean
 		for _, tool in ipairs(backpack:GetChildren()) do
 			if tool:IsA("Tool") and tool.Name:lower():find("shovel") then
 				unequipAllTools()
-				ool.Parent = char
+				tool.Parent = char
 				task.wait(0.1)
 				return true
 			end
@@ -68,14 +68,10 @@ local function equipShovel(): boolean
 	return false
 end
 
-local function getTopModelFromWeight(weightValue: NumberValue): Instance
+local function getFruitModelFromWeight(weightValue: NumberValue): Instance
+	-- Use the nearest containing model (fruit) instead of the top-most model (tree)
 	local m = weightValue:FindFirstAncestorOfClass("Model")
-	if not m then return weightValue.Parent end
-	-- Climb up through nested models so we delete the whole fruit object
-	while m and m.Parent and m.Parent:IsA("Model") do
-		m = m.Parent
-	end
-	return m
+	return m or weightValue.Parent
 end
 
 local function getDeleteRemote(): RemoteEvent?
@@ -86,8 +82,9 @@ local function getDeleteRemote(): RemoteEvent?
 	return nil
 end
 
+
 local function tryDeleteFruit(weightValue: NumberValue, deleteRemote: RemoteEvent)
-	local target = getTopModelFromWeight(weightValue)
+	local target = getFruitModelFromWeight(weightValue)
 	if not target then return end
 	if not isInMyFarm(target) then return end
 	-- Fire the server to delete this object. Server decides if it's allowed.
@@ -105,10 +102,8 @@ local function normalizeFruitName(s: string): string
 end
 
 local function deduceFruitType(weightValue: NumberValue): string
+	-- Use nearest model name to avoid classifying as tree or world model
 	local m = weightValue:FindFirstAncestorOfClass("Model")
-	while m and m.Parent and m.Parent:IsA("Model") do
-		m = m.Parent
-	end
 	local name = m and m.Name or (weightValue.Parent and weightValue.Parent.Name) or "Unknown"
 	return normalizeFruitName(name)
 end
@@ -116,8 +111,10 @@ end
 local function collectKnownTypes()
 	for _, inst in ipairs(Workspace:GetDescendants()) do
 		if inst:IsA("NumberValue") and inst.Name == "Weight" then
-			local t = deduceFruitType(inst)
-			knownTypes[t] = true
+			if isInMyFarm(inst) then
+				local t = deduceFruitType(inst)
+				knownTypes[t] = true
+			end
 		end
 	end
 end
@@ -145,15 +142,16 @@ local function scanAndDelete()
 		for _, inst in ipairs(Workspace:GetDescendants()) do
 			if not ENABLED then break end
 			if inst:IsA("NumberValue") and inst.Name == "Weight" then
-				-- classify type
-				local t = deduceFruitType(inst)
-				knownTypes[t] = true
-				-- filter by farm and type
-				if isInMyFarm(inst) and (SELECTED_TYPE == "All" or t == SELECTED_TYPE) then
-					local w = tonumber(inst.Value) or 0
-					if w < THRESHOLD_KG then
-						tryDeleteFruit(inst, deleteRemote)
-						task.wait(LOOP_DELAY)
+				-- filter by farm first
+				if isInMyFarm(inst) then
+					local t = deduceFruitType(inst)
+					knownTypes[t] = true
+					if (SELECTED_TYPE == "All" or t == SELECTED_TYPE) then
+						local w = tonumber(inst.Value) or 0
+						if w < THRESHOLD_KG then
+							tryDeleteFruit(inst, deleteRemote)
+							task.wait(LOOP_DELAY)
+						end
 					end
 				end
 			end
@@ -292,6 +290,8 @@ local function buildUI()
 		ONLY_MY_FARM = not ONLY_MY_FARM
 		farmToggle.Text = ONLY_MY_FARM and "Only My Farm: ON" or "Only My Farm: OFF"
 		refreshMyFarm()
+		-- reset known types so dropdown reflects current scope
+		knownTypes = { All = true }
 	end)
 
 	-- Start/Stop button
@@ -330,8 +330,10 @@ pcall(buildUI)
 -- Keep options fresh when new fruits spawn
 Workspace.DescendantAdded:Connect(function(inst)
 	if inst:IsA("NumberValue") and inst.Name == "Weight" then
-		local t = deduceFruitType(inst)
-		knownTypes[t] = true
+		if isInMyFarm(inst) then
+			local t = deduceFruitType(inst)
+			knownTypes[t] = true
+		end
 	end
 end)
 
