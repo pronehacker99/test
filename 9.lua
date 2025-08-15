@@ -9,7 +9,7 @@ local GetFarmAsync = require(ReplicatedStorage:WaitForChild("Modules"):WaitForCh
 local localPlayer = Players.LocalPlayer
 
 local autoPlace = true
-local delayTime = 2 -- seconds between placements (tune if needed)
+local delayTime = 0.1 -- seconds between placements (tune if needed)
 local margin = 5 -- shrink edges so it doesn't hug plot borders
 
 local function getFarmBounds()
