@@ -224,14 +224,6 @@ local function makeUI()
 		local collapsed = select(1, withSpaces:gsub("%s%s+", " ")) or withSpaces
 		return {name, withSpaces, collapsed}
 	end
-
-	local function normalizeName(s)
-		if typeof(s) ~= "string" then return "" end
-		s = s:lower()
-		s = s:gsub("%s+", "")
-		s = s:gsub("[^%w]", "")
-		return s
-	end
 	
 	local function equipEggFuzzy(target)
 		local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
@@ -244,9 +236,11 @@ local function makeUI()
 					local eggNameAttr = tool:GetAttribute("EggName") or tool:GetAttribute("ItemName")
 					local toolName = eggNameAttr or tool.Name
 					if typeof(toolName) == "string" then
-						local tNorm = normalizeName(toolName)
+						local t = string.lower(toolName)
 						for _, variant in ipairs(toNiceEggNames(target)) do
-							if normalizeName(variant) == tNorm then
+							if typeof(variant) ~= "string" then continue end
+							local v = string.lower(variant)
+							if string.find(t, v) or string.find(v, t) then
 								table.insert(candidates, tool)
 								break
 							end
