@@ -279,14 +279,31 @@ local function tryDeleteFruit(weightValue: NumberValue, removeItemRemote: Remote
 		if isProbablyTreeOrStructure(target) then return end
 		-- additional sanity: require this weight to be under a Fruits folder
 		if not findAncestorFolderByName(weightValue, "Fruits") then return end
+		-- require that the chosen model is a direct child of the Fruits folder
+		local parentFolder = target.Parent
+		if not (parentFolder and parentFolder:IsA("Folder") and parentFolder.Name == "Fruits") then
+			return
+		end
 	end
+
 	-- Prefer Remove_Item for non-placeable items (fruit); fallback to DeleteObject
 	if removeItemRemote then
-		removeItemRemote:FireServer(target)
+		-- Send a BasePart inside the fruit model so server resolves to the fruit, not the whole plant
+		local toSend: Instance = target
+		if target:IsA("Model") then
+			local bp = findFirstBasePart(target)
+			if bp then toSend = bp end
+		end
+		removeItemRemote:FireServer(toSend)
 		return
 	end
 	if deleteRemote then
-		deleteRemote:FireServer(target)
+		local toSend2: Instance = target
+		if target:IsA("Model") then
+			local bp2 = findFirstBasePart(target)
+			if bp2 then toSend2 = bp2 end
+		end
+		deleteRemote:FireServer(toSend2)
 	end
 end
 
