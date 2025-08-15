@@ -87,13 +87,31 @@ local function getDeleteRemote(): RemoteEvent?
 	return nil
 end
 
+local function getRemoveItemRemote(): RemoteEvent?
+	-- Deep search for Remove_Item remote
+	local ev = ReplicatedStorage:FindFirstChild("Remove_Item", true)
+	if ev and ev:IsA("RemoteEvent") then return ev end
+	local ge = ReplicatedStorage:FindFirstChild("GameEvents", true)
+	if ge then
+		local e2 = ge:FindFirstChild("Remove_Item")
+		if e2 and e2:IsA("RemoteEvent") then return e2 end
+	end
+	return nil
+end
 
-local function tryDeleteFruit(weightValue: NumberValue, deleteRemote: RemoteEvent)
+
+local function tryDeleteFruit(weightValue: NumberValue, removeItemRemote: RemoteEvent?, deleteRemote: RemoteEvent?)
 	local target = getFruitModelFromWeight(weightValue)
 	if not target then return end
 	if not isInMyFarm(target) then return end
-	-- Fire the server to delete this object. Server decides if it's allowed.
-	deleteRemote:FireServer(target)
+	-- Prefer Remove_Item for non-placeable items (fruit); fallback to DeleteObject
+	if removeItemRemote then
+		removeItemRemote:FireServer(target)
+		return
+	end
+	if deleteRemote then
+		deleteRemote:FireServer(target)
+	end
 end
 
 local function normalizeFruitName(s: string): string
@@ -134,10 +152,11 @@ local function scanAndDelete()
 			continue
 		end
 
-		-- Ensure we have the remote; retry until available
+		-- Ensure we have at least one removal remote; retry until available
+		local removeItemRemote = getRemoveItemRemote()
 		local deleteRemote = getDeleteRemote()
-		if not deleteRemote then
-			warn("AutoShovel: DeleteObject RemoteEvent not found. Retrying...")
+		if not removeItemRemote and not deleteRemote then
+			warn("AutoShovel: Removal RemoteEvent not found. Retrying...")
 			task.wait(0.5)
 			continue
 		end
@@ -156,7 +175,7 @@ local function scanAndDelete()
 					if (SELECTED_TYPE == "All" or t == SELECTED_TYPE) then
 						local w = tonumber(inst.Value) or 0
 						if w <= THRESHOLD_KG then
-							tryDeleteFruit(inst, deleteRemote)
+							tryDeleteFruit(inst, removeItemRemote, deleteRemote)
 							task.wait(LOOP_DELAY)
 						end
 					end
