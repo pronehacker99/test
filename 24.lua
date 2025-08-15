@@ -75,10 +75,15 @@ local function getFruitModelFromWeight(weightValue: NumberValue): Instance
 end
 
 local function getDeleteRemote(): RemoteEvent?
-	local ge = ReplicatedStorage:FindFirstChild("GameEvents")
-	if not ge then return nil end
-	local ev = ge:FindFirstChild("DeleteObject")
+	-- Try deep search for robustness across places
+	local ev = ReplicatedStorage:FindFirstChild("DeleteObject", true)
 	if ev and ev:IsA("RemoteEvent") then return ev end
+	-- Fallback: search within GameEvents (also deep)
+	local ge = ReplicatedStorage:FindFirstChild("GameEvents", true)
+	if ge then
+		local e2 = ge:FindFirstChild("DeleteObject")
+		if e2 and e2:IsA("RemoteEvent") then return e2 end
+	end
 	return nil
 end
 
@@ -120,17 +125,7 @@ local function collectKnownTypes()
 end
 
 local function scanAndDelete()
-	local deleteRemote = getDeleteRemote()
-	if not deleteRemote then
-		warn("AutoShovel: DeleteObject RemoteEvent not found!")
-		return
-	end
-
 	refreshMyFarm()
-	if not equipShovel() then
-		warn("AutoShovel: Could not equip shovel.")
-	end
-
 	while true do
 		if not ENABLED then
 			-- idle wait while disabled
@@ -138,6 +133,18 @@ local function scanAndDelete()
 			refreshMyFarm()
 			continue
 		end
+
+		-- Ensure we have the remote; retry until available
+		local deleteRemote = getDeleteRemote()
+		if not deleteRemote then
+			warn("AutoShovel: DeleteObject RemoteEvent not found. Retrying...")
+			task.wait(0.5)
+			continue
+		end
+
+		-- Ensure shovel stays equipped
+		equipShovel()
+
 		-- Iterate all weight values (fruit) and delete
 		for _, inst in ipairs(Workspace:GetDescendants()) do
 			if not ENABLED then break end
@@ -148,7 +155,7 @@ local function scanAndDelete()
 					knownTypes[t] = true
 					if (SELECTED_TYPE == "All" or t == SELECTED_TYPE) then
 						local w = tonumber(inst.Value) or 0
-						if w < THRESHOLD_KG then
+						if w <= THRESHOLD_KG then
 							tryDeleteFruit(inst, deleteRemote)
 							task.wait(LOOP_DELAY)
 						end
@@ -311,6 +318,11 @@ local function buildUI()
 		if n and n > 0 then return n end
 		return THRESHOLD_KG
 	end
+
+	-- Apply new threshold when the box loses focus or Enter is pressed
+	thBox.FocusLost:Connect(function(enterPressed)
+		THRESHOLD_KG = parseThreshold()
+	end)
 
 	startBtn.MouseButton1Click:Connect(function()
 		THRESHOLD_KG = parseThreshold()
