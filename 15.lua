@@ -6,8 +6,10 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local localPlayer = Players.LocalPlayer
+local GetFarmAsync = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("GetFarmAsync"))
 
 -- Configuration
 local SCAN_ROOTS: {Instance} = {
@@ -23,6 +25,14 @@ local modelToGui: {[Instance]: BillboardGui} = {}
 local weightToType: {[Instance]: string} = {}
 local knownTypes: {[string]: boolean} = {}
 local selectedType = "All"
+
+local myFarm: Instance? = nil
+
+local function refreshMyFarm()
+	pcall(function()
+		myFarm = GetFarmAsync(localPlayer)
+	end)
+end
 
 local function formatKg(weightValue: number): string
 	if typeof(weightValue) ~= "number" then return "" end
@@ -118,17 +128,8 @@ local onlyMyFarm = true
 
 local function isInMyFarm(inst: Instance): boolean
 	if not onlyMyFarm then return true end
-	-- Heuristic: if there's a model in ancestry with an Owner_Tag, include only if found; otherwise allow by default
-	local m = inst:FindFirstAncestorOfClass("Model")
-	while m do
-		local ownerTag = m:FindFirstChild("Owner_Tag", true)
-		if ownerTag then
-			-- If an owner tag exists, we assume this is the local player's farm in single-player contexts
-			return true
-		end
-		m = m.Parent and m.Parent:FindFirstAncestorOfClass("Model")
-	end
-	return true
+	if not myFarm or not myFarm.Parent then return true end
+	return inst:IsDescendantOf(myFarm)
 end
 
 local function shouldShow(typeName: string): boolean
@@ -329,6 +330,7 @@ local function buildUI()
 		weightValueToGui = {}
 		knownTypes = {}
 		weightToType = {}
+		refreshMyFarm()
 		scanInitial()
 		applyFilter()
 	end)
@@ -340,6 +342,7 @@ local function buildUI()
 end
 
 -- Kickoff
+refreshMyFarm()
 scanInitial()
 listenForNewWeights()
 pcall(buildUI)
