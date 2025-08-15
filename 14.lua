@@ -215,8 +215,8 @@ local function buildUI()
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 240, 0, 150)
-	frame.Position = UDim2.new(0, 12, 0, 12)
+	frame.Size = UDim2.new(0, 300, 0, 170)
+	frame.Position = UDim2.new(0.5, -150, 0.5, -85)
 	frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 	frame.BackgroundTransparency = 0.2
 	frame.BorderSizePixel = 0
@@ -246,13 +246,14 @@ local function buildUI()
 	dropdown.Parent = frame
 
 	local list = Instance.new("ScrollingFrame")
-	list.Size = UDim2.new(1, -20, 0, 60)
+	list.Size = UDim2.new(1, -20, 0, 70)
 	list.Position = UDim2.new(0, 10, 0, 76)
 	list.BackgroundColor3 = Color3.fromRGB(24,24,24)
 	list.BorderSizePixel = 0
 	list.Visible = false
 	list.CanvasSize = UDim2.new(0,0,0,0)
 	list.ScrollBarThickness = 4
+	list.ZIndex = 10
 	list.Parent = frame
 
 	local uiList = Instance.new("UIListLayout")
@@ -261,8 +262,8 @@ local function buildUI()
 
 	-- Checkbox-like toggle for farm scope
 	local toggle = Instance.new("TextButton")
-	toggle.Size = UDim2.new(1, -20, 0, 24)
-	toggle.Position = UDim2.new(0, 10, 0, 110)
+	toggle.Size = UDim2.new(1, -20, 0, 28)
+	toggle.Position = UDim2.new(0, 10, 0, 120)
 	toggle.BackgroundColor3 = Color3.fromRGB(32,32,32)
 	toggle.BorderSizePixel = 0
 	toggle.Text = "Only My Farm: ON"
@@ -287,17 +288,23 @@ local function buildUI()
 			if child:IsA("TextButton") then child:Destroy() end
 		end
 		local options = {"All"}
-		for t,_ in pairs(knownTypes) do table.insert(options, t) end
+		local hasAny = false
+		for t,_ in pairs(knownTypes) do table.insert(options, t); hasAny = true end
+		if not hasAny then
+			local seen = {}
+			for _, t in pairs(weightToType) do if t and not seen[t] then table.insert(options, t); seen[t] = true end end
+		end
 		table.sort(options)
 		for _, name in ipairs(options) do
 			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, -8, 0, 22)
+			btn.Size = UDim2.new(1, -8, 0, 24)
 			btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
 			btn.BorderSizePixel = 0
 			btn.Text = name
 			btn.Font = Enum.Font.Gotham
-			btn.TextSize = 13
+			btn.TextSize = 14
 			btn.TextColor3 = Color3.new(1,1,1)
+			btn.ZIndex = 11
 			btn.Parent = list
 			btn.MouseButton1Click:Connect(function()
 				selectedType = name
