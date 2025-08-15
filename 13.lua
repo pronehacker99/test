@@ -102,11 +102,33 @@ end
 
 local function determineFruitType(weightValue: NumberValue): string
 	local m = weightValue:FindFirstAncestorOfClass("Model")
-	while m and m.Parent and m.Parent:IsA("Model") do
-		m = m.Parent
+	if m then
+		while m.Parent and m.Parent:IsA("Model") do
+			m = m.Parent
+		end
+		return normalizeFruitName(m.Name)
 	end
-	local name = m and m.Name or (weightValue.Parent and weightValue.Parent.Name) or "Unknown"
-	return normalizeFruitName(name)
+	if weightValue.Parent then
+		return normalizeFruitName(weightValue.Parent.Name)
+	end
+	return "Unknown"
+end
+
+local onlyMyFarm = true
+
+local function isInMyFarm(inst: Instance): boolean
+	if not onlyMyFarm then return true end
+	-- Heuristic: if there's a model in ancestry with an Owner_Tag, include only if found; otherwise allow by default
+	local m = inst:FindFirstAncestorOfClass("Model")
+	while m do
+		local ownerTag = m:FindFirstChild("Owner_Tag", true)
+		if ownerTag then
+			-- If an owner tag exists, we assume this is the local player's farm in single-player contexts
+			return true
+		end
+		m = m.Parent and m.Parent:FindFirstAncestorOfClass("Model")
+	end
+	return true
 end
 
 local function shouldShow(typeName: string): boolean
@@ -165,7 +187,9 @@ local function scanInitial()
 			visited[root] = true
 			for _, nv in ipairs(root:GetDescendants()) do
 				if nv:IsA("NumberValue") and nv.Name == "Weight" then
-					attachEspToWeight(nv)
+					if isInMyFarm(nv) then
+						attachEspToWeight(nv)
+					end
 				end
 			end
 		end
@@ -175,7 +199,9 @@ end
 local function listenForNewWeights()
 	Workspace.DescendantAdded:Connect(function(inst)
 		if inst:IsA("NumberValue") and inst.Name == "Weight" then
-			attachEspToWeight(inst)
+			if isInMyFarm(inst) then
+				attachEspToWeight(inst)
+			end
 		end
 	end)
 end
@@ -189,7 +215,7 @@ local function buildUI()
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 240, 0, 120)
+	frame.Size = UDim2.new(0, 240, 0, 150)
 	frame.Position = UDim2.new(0, 12, 0, 12)
 	frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 	frame.BackgroundTransparency = 0.2
@@ -233,6 +259,22 @@ local function buildUI()
 	uiList.SortOrder = Enum.SortOrder.LayoutOrder
 	uiList.Parent = list
 
+	-- Checkbox-like toggle for farm scope
+	local toggle = Instance.new("TextButton")
+	toggle.Size = UDim2.new(1, -20, 0, 24)
+	toggle.Position = UDim2.new(0, 10, 0, 110)
+	toggle.BackgroundColor3 = Color3.fromRGB(32,32,32)
+	toggle.BorderSizePixel = 0
+	toggle.Text = "Only My Farm: ON"
+	toggle.Font = Enum.Font.Gotham
+	toggle.TextSize = 14
+	toggle.TextColor3 = Color3.new(1,1,1)
+	toggle.Parent = frame
+
+	local function refreshCheckbox()
+		toggle.Text = onlyMyFarm and "Only My Farm: ON" or "Only My Farm: OFF (All Farms)"
+	end
+
 	local function applyFilter()
 		for w, g in pairs(weightValueToGui) do
 			local t = weightToType[w]
@@ -272,6 +314,19 @@ local function buildUI()
 		if list.Visible then rebuildOptions() end
 	end)
 
+	toggle.MouseButton1Click:Connect(function()
+		onlyMyFarm = not onlyMyFarm
+		refreshCheckbox()
+		-- reset and rescan
+		for _, g in pairs(weightValueToGui) do if g then g:Destroy() end end
+		weightValueToGui = {}
+		knownTypes = {}
+		weightToType = {}
+		scanInitial()
+		applyFilter()
+	end)
+
+	refreshCheckbox()
 	-- initial populate after scan
 	task.defer(rebuildOptions)
 	return gui
