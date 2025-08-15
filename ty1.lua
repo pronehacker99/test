@@ -732,92 +732,184 @@ Toggles.EnableBugMode:OnChanged(function(value)
 end)
 
 -- =================================================================
--- AUTO PLACE EGGS
+-- INFINITE SPRINKLER (Added by Gemini)
 -- =================================================================
-local AutoPlaceEggsGroupBox = MiscTab:AddLeftGroupbox('Auto Place Eggs', 'egg')
-AutoPlaceEggsGroupBox:AddDivider()
+local SprinklerGroupBox = MiscTab:AddRightGroupbox('Infinite Sprinkler', 'bug')
+SprinklerGroupBox:AddDivider()
 
-AutoPlaceEggsGroupBox:AddDropdown('AutoPlaceEggType', {
-    Values = {},
-    Default = nil,
-    Multi = false,
-    Text = 'Select Egg',
-    Tooltip = 'Select the egg to automatically place.',
-    Searchable = true,
-    MenuOpened = function()
-        RefreshEggModels()
-    end
-})
-
-AutoPlaceEggsGroupBox:AddToggle('EnableAutoPlaceEgg', {
-    Text = 'Enable Auto Place Egg',
-    Default = false,
-    Tooltip = 'Automatically places the selected egg in your farm area.'
-})
-
-function RefreshEggModels()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local EggModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Models"):WaitForChild("EggModels")
-    local eggNames = {}
-    for _, egg in ipairs(EggModels:GetChildren()) do
-        table.insert(eggNames, egg.Name)
-    end
-    Options.AutoPlaceEggType:SetValues(eggNames)
-    Library:Notify("Refreshed egg list.", 1)
-end
-
-local autoPlaceEggActive = false
-Toggles.EnableAutoPlaceEgg:OnChanged(function(value)
-    autoPlaceEggActive = value
-    if value then
-        Library:Notify("Auto Place Egg enabled!", 2)
+SprinklerGroupBox:AddButton({
+    Text = 'Delete All Sprinklers',
+    Func = function()
         task.spawn(function()
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local PetEggService = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("PetEggService")
+            Library:Notify("Starting to delete sprinklers...", 2)
             
-            -- Farm placement bounds (adjust for your plot)
-            local minX, maxX = 70, 80
-            local minZ, maxZ = -105, -95
-            local Y = 0
-            local delayTime = 1
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            local workspace = game:GetService("Workspace")
 
-            local function equipEggTool(eggName)
-                if not eggName then return false end
-                for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-                    if string.find(tool.Name:lower(), eggName:lower()) then
-                        tool.Parent = LocalPlayer.Character
-                        return true
+            local function unequipAllTools()
+                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:UnequipTools()
+                end
+                task.wait(0.2)
+            end
+
+            local function equipShovel()
+                if not player.Character then 
+                    Library:Notify("Character not found!", 3)
+                    return false 
+                end
+                
+                -- Check if already equipped
+                for _, tool in pairs(player.Character:GetChildren()) do
+                    if tool:IsA("Tool") and tool.Name:lower():find("shovel") then
+                        return true -- already equipped
                     end
                 end
+                
+                -- Search backpack
+                if player.Backpack then
+                    for _, tool in pairs(player.Backpack:GetChildren()) do
+                        if tool:IsA("Tool") and tool.Name:lower():find("shovel") then
+                            unequipAllTools()
+                            tool.Parent = player.Character
+                            task.wait(0.1) -- give time to equip
+                            return true
+                        end
+                    end
+                end
+
+                Library:Notify("Shovel not found in Backpack or Character!", 3)
                 return false
             end
 
-            local function randomPosition()
-                return Vector3.new(
-                    math.random(minX, maxX),
-                    Y,
-                    math.random(minZ, maxZ)
-                )
+            local DeleteObject = ReplicatedStorage:FindFirstChild("GameEvents", true) and ReplicatedStorage.GameEvents:FindFirstChild("DeleteObject")
+
+            if not (DeleteObject and DeleteObject:IsA("RemoteEvent")) then
+                Library:Notify("DeleteObject RemoteEvent not found!", 3)
+                return
             end
 
-            while autoPlaceEggActive do
-                local selectedEggName = Options.AutoPlaceEggType.Value
-                if selectedEggName then
-                    if equipEggTool(selectedEggName) then
-                        PetEggService:FireServer("CreateEgg", randomPosition())
+            if equipShovel() then
+                task.wait(0.3) -- wait for equip animation
+                local sprinklersDeleted = 0
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name:lower():find("sprinkler") then
+                        DeleteObject:FireServer(obj)
+                        sprinklersDeleted = sprinklersDeleted + 1
+                        task.wait(0.1) -- prevent lag
                     end
-                    task.wait(delayTime)
-                else
-                    task.wait(0.5)
                 end
+                Library:Notify("Deleted " .. sprinklersDeleted .. " sprinklers.", 3)
+            else
+                Library:Notify("Could not equip shovel. Aborting.", 3)
             end
         end)
+    end,
+    Tooltip = 'Equips a shovel and deletes all sprinklers in the workspace.'
+})
+
+-- =================================================================
+-- AUTO PLACE EGGS (Added by Gemini)
+-- =================================================================
+local AutoPlaceEggsGroupBox = MiscTab:AddLeftGroupbox('Auto Place Eggs', 'circle')
+AutoPlaceEggsGroupBox:AddDivider()
+
+-- Get available eggs from ReplicatedStorage
+local EggModels = game:GetService("ReplicatedStorage").Assets.Models.EggModels
+local EggList = {}
+for _, egg in ipairs(EggModels:GetChildren()) do
+    table.insert(EggList, egg.Name)
+end
+
+AutoPlaceEggsGroupBox:AddDropdown('EggSelection', {
+    Values = EggList,
+    Default = EggList[1] or "Common Egg",
+    Multi = false,
+    Text = 'Select Egg to Place',
+    Tooltip = 'Choose which egg to automatically place.'
+})
+
+AutoPlaceEggsGroupBox:AddInput('EggPlaceX', {
+    Default = '74',
+    Text = 'X Position',
+    Tooltip = 'X coordinate for egg placement.'
+})
+
+AutoPlaceEggsGroupBox:AddInput('EggPlaceY', {
+    Default = '0',
+    Text = 'Y Position',
+    Tooltip = 'Y coordinate for egg placement.'
+})
+
+AutoPlaceEggsGroupBox:AddInput('EggPlaceZ', {
+    Default = '-98',
+    Text = 'Z Position',
+    Tooltip = 'Z coordinate for egg placement.'
+})
+
+AutoPlaceEggsGroupBox:AddToggle('EnableAutoPlaceEggs', {
+    Text = 'Enable Auto Place Eggs',
+    Default = false,
+    Tooltip = 'Automatically equips and places the selected egg at the specified position.'
+})
+
+local autoPlaceEggsActive = false
+
+Toggles.EnableAutoPlaceEggs:OnChanged(function(value)
+    if value then
+        if autoPlaceEggsActive then return end
+        autoPlaceEggsActive = true
+        Library:Notify('Auto Place Eggs Enabled!')
+        
+        task.spawn(function()
+            while Toggles.EnableAutoPlaceEggs.Value do
+                local selectedEgg = Options.EggSelection.Value
+                local xPos = tonumber(Options.EggPlaceX.Value) or 74
+                local yPos = tonumber(Options.EggPlaceY.Value) or 0
+                local zPos = tonumber(Options.EggPlaceZ.Value) or -98
+                
+                if selectedEgg then
+                    -- First, equip the selected egg
+                    if equipItem(selectedEgg) then
+                        task.wait(0.5) -- Wait for equip animation
+                        
+                        -- Place the egg using the remote
+                        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                        local PetEggService = ReplicatedStorage.GameEvents.PetEggService
+                        
+                        local success, err = pcall(function()
+                            PetEggService:FireServer(
+                                "CreateEgg",
+                                Vector3.new(xPos, yPos, zPos)
+                            )
+                        end)
+                        
+                        if success then
+                            print("SCRIPT: Successfully placed " .. selectedEgg .. " at (" .. xPos .. ", " .. yPos .. ", " .. zPos .. ")")
+                        else
+                            warn("SCRIPT: Failed to place egg: " .. tostring(err))
+                        end
+                        
+                        task.wait(0.1) -- Brief delay before next placement
+                    else
+                        Library:Notify("Could not equip " .. selectedEgg .. ". Make sure you have it in your backpack!", 3)
+                        task.wait(2) -- Wait longer if equip failed
+                    end
+                end
+                
+                task.wait(0.5) -- Main loop delay
+            end
+            autoPlaceEggsActive = false
+        end)
     else
-        Library:Notify("Auto Place Egg disabled!", 2)
+        Library:Notify('Auto Place Eggs Disabled!')
+        -- Unequip any equipped tool when disabling
+        unequipItem()
     end
 end)
-
-
 
 -- Player Mods groupbox
 local MainGroupBox = MainTab:AddLeftGroupbox('Player Mods', 'person-standing')
@@ -2818,7 +2910,6 @@ task.spawn(function()
     RefreshBackpackSeeds() -- Refresh backpack seeds on startup
     RefreshFriendsList() -- Refresh friends list on startup
     RefreshPlayerListForSender()
-    RefreshEggModels()
     
     -- Check if ESP was enabled in saved config and start it
     task.wait(1) -- Wait a bit more for config to load
