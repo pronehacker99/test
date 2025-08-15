@@ -2920,6 +2920,7 @@ task.spawn(function()
     RefreshBackpackSeeds() -- Refresh backpack seeds on startup
     RefreshFriendsList() -- Refresh friends list on startup
     RefreshPlayerListForSender()
+    RefreshEggList() -- Refresh egg list on startup
     
     -- Check if ESP was enabled in saved config and start it
     task.wait(1) -- Wait a bit more for config to load
